@@ -2,6 +2,28 @@ import os
 import datetime
 from glob import glob
 
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# generate a depth/force profile for the current SMP site
+def save_quicklook(data_vals, out_png):
+    d_list = []
+    for d in data_vals:
+        d_list.append([float(x.strip()) for x in d])
+    dframe = pd.DataFrame(data=d_list, columns=['Depth', 'Force'])
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    dframe.plot(x='Force', y='Depth',linewidth=0.8, color='k', legend=False, ax=ax)
+    x_lim = int(pd.np.ceil(dframe['Force'].max()))
+    ax.set_xbound(-1, x_lim)
+    ax.set_xticks(range(0, x_lim, 5))
+    ax.set_xticks(range(0, x_lim, 1), minor=True)
+    ax.set_xlabel('Force (N)')
+    ax.set_ylabel('Depth (mm)')
+    ax.set_title(os.path.splitext(os.path.basename(out_png))[0])
+    fig.savefig(out_png)
+    
+
 # use the current shell directory
 workdir = os.getcwd()
 
@@ -75,3 +97,4 @@ for file_pair in pair_list:
             out_csv.write(",".join(row))
             
     print "{} generated".format(os.path.basename(csv_file))
+    save_quicklook(data_list, csv_file.replace(".csv",".png"))
