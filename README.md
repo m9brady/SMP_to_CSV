@@ -2,7 +2,7 @@
 Converts header and data files ("\*_Header.txt" and "\*_Data.txt") into CSV containing all data points (Depth and Pen Force) plus a multi-line header containing time, latitude and longitude information.
 
 ## Requirements
-*Assumes you have Python 2.7 installed*
+*Assumes you have Python 2.7 installed with pandas and matplotlib modules*
 
 1. Create two folders "indata" and "outdata" in the same directory as *SMP_to_CSV.py* 
 
