@@ -14,18 +14,19 @@ def save_quicklook(data_vals, out_png):
     fig = plt.figure()
     ax = fig.add_subplot(111)
     dframe.plot(x='Force', y='Depth',linewidth=0.8, color='k', legend=False, ax=ax)
-    x_lim = int(pd.np.ceil(dframe['Force'].max()))
+    x_lim = int(pd.np.ceil(dframe['Force'].max())) # use ceil to always round up
     ax.set_xbound(-1, x_lim)
     ax.set_xticks(range(0, x_lim, 5))
     ax.set_xticks(range(0, x_lim, 1), minor=True)
     ax.set_xlabel('Force (N)')
+    ax.invert_yaxis() # Measures Depth from the top of snowpack, so invert Y axis
     ax.set_ylabel('Depth (mm)')
     ax.set_title(os.path.splitext(os.path.basename(out_png))[0])
     fig.savefig(out_png)
     
 
-# use the current shell directory
-workdir = os.getcwd()
+# use this script file's directory as the working directory
+workdir = os.path.abspath(os.path.dirname(__file__))
 
 input_data = os.path.join(workdir, 'indata')
 output_data = os.path.join(workdir, 'outdata')
