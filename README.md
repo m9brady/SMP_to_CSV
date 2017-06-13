@@ -1,12 +1,28 @@
 # SMP_to_CSV
-Converts header and data files ("\*_Header.txt" and "\*_Data.txt") into CSV containing all data points (Depth and Pen Force) plus a multi-line header containing time, latitude and longitude information.
+Converts SMP measurement files ("*.pnt") into CSV containing all data points (Depth and Penetration Force) plus a multi-line header containing containing time, latitude, longitude and other site-specific information. A depth/force profile quicklook is also generated as a PNG file.
 
-## Requirements
-*Assumes you have Python 2.7 installed with pandas and matplotlib modules*
+## Disclaimer
+The SMP class methods "retrieve_header" and "extract_data" are from the excellent [SnowMicroPyn](https://sourceforge.net/projects/pyntreader/files/) tool by Sascha Grimm. SnowMicroPyn is licensed under the [GNU General Public License version 3.0 (GPLv3)](https://sourceforge.net/directory/license:gplv3/)
+
+## Requirements and Usage
+*Assumes you have Python 2.7 installed with numpy, pandas and matplotlib modules*
 
 1. Create two folders "indata" and "outdata" in the same directory as *SMP_to_CSV.py* 
 
-2. Put the header ("\*_Header.txt") and data ("\*_Data.dat") files into the "indata" folder
+2. Put the SMP measurement files ("*.pnt") into the "indata" folder using the following directory structure:
+
+  * indata
+    * SMP A
+      * SMPA_YYYYMMDD where YYYYMMDD is the day the SMP measurements were taken
+        * siteName
+          * A???????.pnt where ?????? is the unique observation id from the SMP tool
+          * A???????.pnt where ?????? is the unique observation id from the SMP tool
+    * SMP B
+      * SMPB_YYYYMMDD
+        * siteName
+          * B???????.pnt where ?????? is the unique observation id from the SMP tool
+          * B???????.pnt where ?????? is the unique observation id from the SMP tool
+    * repeat for as many SMP groups that you may have
 
 3. Run the SMP_to_CSV.py script from the same directory where "indata" and "outdata" are located. 
 
@@ -15,4 +31,4 @@ From Windows command line:
 python SMP_to_CSV.py
 ```
 
-4. All output CSV files will be sent to the "outdata" folder
+4. All output CSV/PNG files will be sent to the "outdata" folder
