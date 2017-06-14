@@ -1,0 +1,6 @@
+*.pnt
+*.png
+outdata/SMPe_indata_CSV_S34M1887.csv
+*.csv
+scratch.py
+*.pyc
