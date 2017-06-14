@@ -92,12 +92,22 @@ class SMP(object):
             A = signal.detrend(f_z-c1)
             C_f = np.correlate(A, A, mode='full')
             
+            #Normalize xcorr by n-lags for 'unbiased'
+            maxlag=N-1
+            lags = np.append(np.linspace(N-maxlag,N-1,N-1),N)
+            lags = np.append(lags,np.linspace(N-1,N-maxlag,N-1))
+            lags = lags *np.repeat(1, C_f.size)
+            C_f = C_f/lags #normalize by n-lag
+            
             #Shot noise parameters
             delta[i_step] = -3/2 * C_f[N] / (C_f[N+1] - C_f[N]) * self.header['Samples Dist [mm]']; # eq. 11 in Löwe and van Herwijnen, 2012  
             lam[i_step] = 4/3 * np.power(c1,2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
             f_0[i_step] = 3/2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
             L[i_step] = np.power(A_cone/lam[i_step],1./3.) 
-        return(np.stack((medf_z,delta,lam,f_0,L),axis=-1))
+            
+            self.shotNoise = np.stack((medf_z,delta,lam,f_0,L),axis=-1)
+            
+        return(self.shotNoise)
     
     def retrieve_header(self, pnt_file):
         '''
