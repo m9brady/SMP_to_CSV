@@ -5,6 +5,8 @@ try:
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
+    from tools_ext import detect_peaks
+    from scipy import signal 
 except ImportError as err:
     print err
     
@@ -13,6 +15,89 @@ class SMP(object):
     def __init__(self, binaryfile):
         self.header, self.units = self.retrieve_header(binaryfile)
         self.data = self.extract_data(binaryfile, self.header)
+        self.subset = self.data[self.pick_surf():,:]
+        #self.shotNoise = self.shot_noise()
+           
+    def pick_surf(self, sWindow = 1000):
+        smooth_data = self.moving_average(self.data[:,1],sWindow)
+        noiseMed = np.median(smooth_data[sWindow:sWindow*2]) # using median for now
+        ind = detect_peaks(smooth_data, mph=noiseMed*2,mpd=sWindow, show=True)
+        return(ind[0])
+    
+    def moving_average(self, a, n=1000):
+        '''
+        Smooths the SMP force data with a running average with window size of n
+        Pads the front of the array with nan values to return  an array of the same length
+        '''
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        ret[n - 1:] = ret[n - 1:] / n
+        ret[:n - 1] = np.nan
+        return ret
+    
+    def est_microstucture(self, coef):
+        '''
+        Estimate the microstucture properties based on Proksch et al 2015
+        Ported from various sources written by Martin Proksch and Josh King
+        '''
+        if self.shotNoise is None:
+            return "Shot noise parameters are required"
+        densSmp = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
+        longCorSmpEx = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
+        longCorSmpC = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
+        ssaSmp = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
+        for i in range(0,self.shotNoise[:,0].size-1):
+           densSmp[i] = coef['a1'] + (coef['a2']*np.log(self.shotNoise[i,0])) + (coef['a3']*np.log(self.shotNoise[i,0])*self.shotNoise[i,4]) + (msCoef['a4']*self.shotNoise[i,4])
+           phiSmp = densSmp[i]/ 916.7
+           longCorSmpEx[i] = coef['b1'] + (coef['b2'] * self.shotNoise[i,4]) + (coef['b3'] * np.log(self.shotNoise[i,0]))
+           longCorSmpC[i] = coef['c1'] + (coef['c2'] * self.shotNoise[i,4]) + (coef['c3'] * np.log(self.shotNoise[i,0]))
+           ssaSmp[i] = (4*(1-phiSmp)) / longCorSmpC[i]
+        return(np.stack((densSmp,longCorSmpEx,longCorSmpC,ssaSmp),axis=-1))
+    
+    def shot_noise(self, A_cone = 19.6, window_size_mm = 2, overlap_mm = 0.5):
+        '''
+        Estimate the shot noise paramters based on Löwe and van Herwijnen, 2012
+        Ported from various sources written by Martin Proksch, J-B Madore, and Josh King
+        '''
+        windowSize = int(round(window_size_mm/self.header['Samples Dist [mm]']))
+        #stepSizeMM = overlap_mm*window_size_mm
+        stepSize = int(overlap_mm*windowSize)
+        #nWindows=int(np.floor(self.subset[:,1].size/windowSize))
+        nSteps=int(np.floor(self.subset[:,1].size/stepSize-1))
+        
+        z = np.empty(nSteps, dtype=np.float64)
+        medf_z = np.empty(nSteps, dtype=np.float64)
+        delta = np.empty(nSteps, dtype=np.float64)
+        lam = np.empty(nSteps, dtype=np.float64)
+        f_0 = np.empty(nSteps, dtype=np.float64)
+        L = np.empty(nSteps, dtype=np.float64)
+        #plt.plot(p.data[:,0],p.data[:,1])
+
+        for i_step in range(1,nSteps):
+            z_min=(i_step-1)*stepSize+1
+            z_max=(i_step-1)*stepSize+windowSize
+            f_z=self.subset[z_min:z_max,1]
+            N=len(f_z);
+        
+            # calc z-vector:
+            z[i_step] = (i_step-1)*stepSize + stepSize
+            z[i_step] = round(z[i_step]*p.header['Samples Dist [mm]']*100)/100
+          
+            # calc median penetration force:
+            medf_z[i_step] = np.median(f_z)
+            
+            # calc shot noise
+            c1 = np.mean(f_z)
+            c2 = np.var(f_z) * (len(f_z) - 1) / len(f_z)
+            A = signal.detrend(f_z-c1)
+            C_f = np.correlate(A, A, mode='full')
+            
+            #Shot noise parameters
+            delta[i_step] = -3/2 * C_f[N] / (C_f[N+1] - C_f[N]) * self.header['Samples Dist [mm]']; # eq. 11 in Löwe and van Herwijnen, 2012  
+            lam[i_step] = 4/3 * np.power(c1,2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
+            f_0[i_step] = 3/2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
+            L[i_step] = np.power(A_cone/lam[i_step],1./3.) 
+        return(np.stack((medf_z,delta,lam,f_0,L),axis=-1))
     
     def retrieve_header(self, pnt_file):
         '''
@@ -205,6 +290,7 @@ class SMP(object):
 
 if __name__ == "__main__":
     workdir = os.path.abspath(os.path.dirname(__file__))
+    os.chdir(workdir)
     input_data = os.path.join(workdir, 'indata')
     output_data = os.path.join(workdir, 'outdata')
     pnt_list = []
@@ -236,3 +322,17 @@ if __name__ == "__main__":
         p = SMP(pnt)
         if not os.path.isfile(outcsvabs): p.export_to_csv(outcsvabs)
         if not os.path.isfile(outpng): p.plot_quicklook(outpng)
+        
+        #placeholder microstucture coefficients
+        msCoef = {'a1': 420.47, #+-8.31 kg/m-3
+            'a2': 102.47, #+-4.24 N-1
+            'a3': -121.15, #+-10.65 N-1mm-1
+            'a4': -169.96, #+-18.70 mm-1
+            'b1': 0.0715, #+-0.0058 mm
+            'b2': 0.299, #+-0.011 mm-1
+            'b3': 0.0149, #+-0.0018 N-1
+            'c1': 0.131, #+-0.0081 mm
+            'c2': 0.155, #+-0.015 mm-1
+            'c3': 0.0291} #+-0.0024 N-1
+        #shot_noise(self)
+        #est_microstucture(self, msCoef)
