@@ -98,6 +98,13 @@ class SMP(object):
             A = signal.detrend(f_z - c1)
             C_f = np.correlate(A, A, mode='full')
             
+            #Normalize xcorr by n-lags for 'unbiased'
+            maxlag = N - 1
+            lags = np.append(np.linspace(N - maxlag, N - 1, N - 1), N)
+            lags = np.append(lags, np.linspace(N - 1, N - maxlag, N - 1))
+            lags *= np.repeat(1, C_f.size)
+            C_f /= lags #normalize by n-lag
+            
             #Shot noise parameters
             delta[i_step] = -3. / 2 * C_f[N] / (C_f[N+1] - C_f[N]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
             lam[i_step] = 4. / 3 * np.power(c1, 2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
