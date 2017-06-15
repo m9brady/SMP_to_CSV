@@ -4,6 +4,8 @@ Converts SMP measurement files ("*.pnt") into CSV containing all data points (De
 ## Disclaimer
 The SMP class methods "retrieve_header" and "extract_data" are from the excellent [SnowMicroPyn](https://sourceforge.net/projects/pyntreader/files/) tool by Sascha Grimm. SnowMicroPyn is licensed under the [GNU General Public License version 3.0 (GPLv3)](https://sourceforge.net/directory/license:gplv3/)
 
+The "detect_peaks" and associated "_plot" helper functions are from the [Biomechanics and Motor Control](https://github.com/demotu/BMC/blob/master/functions/detect_peaks.py) repo by Marcos Duarte. BMC is licensed under the [MIT Licence](https://github.com/demotu/BMC/blob/master/LICENSE.txt)
+
 ## Requirements and Usage
 *Assumes you have Python 2.7 installed with numpy, pandas and matplotlib modules*
 
@@ -11,18 +13,19 @@ The SMP class methods "retrieve_header" and "extract_data" are from the excellen
 
 2. Put the SMP measurement files ("*.pnt") into the "indata" folder using the following directory structure:
 
-  * indata
-    * SMP A
-      * SMPA_YYYYMMDD where YYYYMMDD is the day the SMP measurements were taken
-        * siteName
-          * A???????.pnt where ?????? is the unique observation id from the SMP tool
-          * A???????.pnt where ?????? is the unique observation id from the SMP tool
-    * SMP B
-      * SMPB_YYYYMMDD
-        * siteName
-          * B???????.pnt where ?????? is the unique observation id from the SMP tool
-          * B???????.pnt where ?????? is the unique observation id from the SMP tool
-    * repeat for as many SMP groups that you may have
+	* indata
+		* SMP
+			* SMP A
+			  * SMPA_YYYYMMDD where YYYYMMDD is the day the SMP measurements were taken
+				* siteName
+				  * A???????.pnt where ?????? is the unique observation id from the SMP tool
+				  * A???????.pnt where ?????? is the unique observation id from the SMP tool
+			* SMP B
+			  * SMPB_YYYYMMDD
+				* siteName
+				  * B???????.pnt where ?????? is the unique observation id from the SMP tool
+				  * B???????.pnt where ?????? is the unique observation id from the SMP tool
+			* repeat for as many SMP groups that you may have
 
 3. Run the SMP_to_CSV.py script from the same directory where "indata" and "outdata" are located. 
 
