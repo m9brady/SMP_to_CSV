@@ -15,89 +15,97 @@ class SMP(object):
     def __init__(self, binaryfile):
         self.header, self.units = self.retrieve_header(binaryfile)
         self.data = self.extract_data(binaryfile, self.header)
-        self.subset = self.data[self.pick_surf():,:]
-        #self.shotNoise = self.shot_noise()
+        self.subset = self.data[self.pick_surf():,:] # the valid data subset (from top-of-snowpack)
+        self.shotNoise = None # may not always need to estimate microstructure, so we initialize as None to save time
            
-    def pick_surf(self, sWindow = 1000):
-        smooth_data = self.moving_average(self.data[:,1],sWindow)
-        noiseMed = np.median(smooth_data[sWindow:sWindow*2]) # using median for now
-        ind = detect_peaks(smooth_data, mph=noiseMed*2,mpd=sWindow, show=True)
+    def pick_surf(self, sWindow=1000):
+        '''
+        Identifies the beginning of valid SMP force measurements (the snow surface) and returns 
+        the row index for use in removing spurious force measurements from the raw data array
+        '''
+        force_data = self.data[:,1]
+        # first, smooth the raw data to reduce noise
+        smoothed_force = moving_average(force_data, sWindow)
+        noiseMed = np.median(smoothed_force[sWindow:sWindow * 2]) # using median for now
+        # identify the pen-force peaks, toggle show to True to display inline plot
+        ind = detect_peaks(smoothed_force, mph=noiseMed*2, mpd=sWindow, show=False)
+        # return the first pen-force peak (i.e. the top of the snowpack)
         return(ind[0])
     
-    def moving_average(self, a, n=1000):
-        '''
-        Smooths the SMP force data with a running average with window size of n
-        Pads the front of the array with nan values to return  an array of the same length
-        '''
-        ret = np.cumsum(a, dtype=float)
-        ret[n:] = ret[n:] - ret[:-n]
-        ret[n - 1:] = ret[n - 1:] / n
-        ret[:n - 1] = np.nan
-        return ret
     
-    def est_microstucture(self, coef):
+    def est_microstructure(self, coef):
         '''
-        Estimate the microstucture properties based on Proksch et al 2015
+        Estimate the microstructure properties based on Proksch et al 2015
         Ported from various sources written by Martin Proksch and Josh King
         '''
         if self.shotNoise is None:
             return "Shot noise parameters are required"
-        densSmp = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
-        longCorSmpEx = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
-        longCorSmpC = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
-        ssaSmp = np.empty(self.shotNoise[:,0].size, dtype=np.float64)
-        for i in range(0,self.shotNoise[:,0].size-1):
-           densSmp[i] = coef['a1'] + (coef['a2']*np.log(self.shotNoise[i,0])) + (coef['a3']*np.log(self.shotNoise[i,0])*self.shotNoise[i,4]) + (msCoef['a4']*self.shotNoise[i,4])
-           phiSmp = densSmp[i]/ 916.7
-           longCorSmpEx[i] = coef['b1'] + (coef['b2'] * self.shotNoise[i,4]) + (coef['b3'] * np.log(self.shotNoise[i,0]))
-           longCorSmpC[i] = coef['c1'] + (coef['c2'] * self.shotNoise[i,4]) + (coef['c3'] * np.log(self.shotNoise[i,0]))
-           ssaSmp[i] = (4*(1-phiSmp)) / longCorSmpC[i]
-        return(np.stack((densSmp,longCorSmpEx,longCorSmpC,ssaSmp),axis=-1))
+        arrLen = self.shotNoise.shape[0]
+        #TODO: Possible refactor to a single 2D array with columns for each property
+        densSmp = np.empty(arrLen)
+        longCorSmpEx = np.empty(arrLen)
+        longCorSmpC = np.empty(arrLen)
+        ssaSmp = np.empty(arrLen)
+        #TODO: Possible refactor to use broadcasted math instead of for-loop
+        for i in xrange(arrLen - 1): # MB: why -1?
+            log_medf_z = np.log(self.shotNoise[i,0])
+            L = self.shotNoise[i,4]
+            densSmp[i] = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
+            phiSmp = densSmp[i] / 916.7
+            longCorSmpEx[i] = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
+            longCorSmpC[i] = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
+            ssaSmp[i] = (4 * (1 - phiSmp)) / longCorSmpC[i]
+           
+        return np.hstack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
     
-    def shot_noise(self, A_cone = 19.6, window_size_mm = 2, overlap_mm = 0.5):
+    def shot_noise(self, A_cone=19.6, window_size_mm=2, overlap_mm=0.5):
         '''
-        Estimate the shot noise paramters based on Löwe and van Herwijnen, 2012
+        Estimate the shot noise parameters based on Löwe and van Herwijnen, 2012
         Ported from various sources written by Martin Proksch, J-B Madore, and Josh King
         '''
-        windowSize = int(round(window_size_mm/self.header['Samples Dist [mm]']))
+        samplesDist = self.header['Samples Dist [mm]']
+        windowSize = int(round(window_size_mm/samplesDist))
         #stepSizeMM = overlap_mm*window_size_mm
         stepSize = int(overlap_mm*windowSize)
         #nWindows=int(np.floor(self.subset[:,1].size/windowSize))
-        nSteps=int(np.floor(self.subset[:,1].size/stepSize-1))
+        nSteps = int(np.floor(self.subset[:,1].size/stepSize-1))
         
-        z = np.empty(nSteps, dtype=np.float64)
-        medf_z = np.empty(nSteps, dtype=np.float64)
-        delta = np.empty(nSteps, dtype=np.float64)
-        lam = np.empty(nSteps, dtype=np.float64)
-        f_0 = np.empty(nSteps, dtype=np.float64)
-        L = np.empty(nSteps, dtype=np.float64)
+        #TODO: Possible refactor to a single 2D array with columns for each parameter
+        z = np.empty(nSteps)
+        medf_z = np.empty(nSteps)
+        delta = np.empty(nSteps)
+        lam = np.empty(nSteps)
+        f_0 = np.empty(nSteps)
+        L = np.empty(nSteps)
         #plt.plot(p.data[:,0],p.data[:,1])
 
-        for i_step in range(1,nSteps):
-            z_min=(i_step-1)*stepSize+1
-            z_max=(i_step-1)*stepSize+windowSize
-            f_z=self.subset[z_min:z_max,1]
-            N=len(f_z);
+        for i_step in range(1, nSteps):
+            z_min = (i_step - 1) * stepSize + 1
+            z_max = (i_step - 1) * stepSize + windowSize
+            f_z = self.subset[z_min:z_max,1]
+            N = len(f_z);
         
             # calc z-vector:
-            z[i_step] = (i_step-1)*stepSize + stepSize
-            z[i_step] = round(z[i_step]*p.header['Samples Dist [mm]']*100)/100
+            z[i_step] = (i_step - 1) * stepSize + stepSize
+            z[i_step] = round(z[i_step] * samplesDist * 100) / 100
           
             # calc median penetration force:
             medf_z[i_step] = np.median(f_z)
             
             # calc shot noise
-            c1 = np.mean(f_z)
-            c2 = np.var(f_z) * (len(f_z) - 1) / len(f_z)
-            A = signal.detrend(f_z-c1)
+            c1 = f_z.mean()
+            c2 = f_z.var() * (len(f_z) - 1) / len(f_z) # len() can be used because f_z is 1D
+            A = signal.detrend(f_z - c1)
             C_f = np.correlate(A, A, mode='full')
             
             #Shot noise parameters
-            delta[i_step] = -3/2 * C_f[N] / (C_f[N+1] - C_f[N]) * self.header['Samples Dist [mm]']; # eq. 11 in Löwe and van Herwijnen, 2012  
-            lam[i_step] = 4/3 * np.power(c1,2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
-            f_0[i_step] = 3/2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
-            L[i_step] = np.power(A_cone/lam[i_step],1./3.) 
-        return(np.stack((medf_z,delta,lam,f_0,L),axis=-1))
+            delta[i_step] = -3. / 2 * C_f[N] / (C_f[N+1] - C_f[N]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
+            lam[i_step] = 4. / 3 * np.power(c1, 2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
+            f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
+            L[i_step] = np.power(A_cone / lam[i_step] , 1. / 3) 
+        
+        self.shotNoise = np.hstack((medf_z, delta, lam, f_0, L))
+        return 0 # success
     
     def retrieve_header(self, pnt_file):
         '''
@@ -250,14 +258,14 @@ class SMP(object):
         ax.plot(self.data[:,1], self.data[:,0], 'k-', linewidth=0.8)
         x_lim = int(np.ceil(self.data[:,1].max()))
         y_lim = int(np.ceil(self.data[:,0].max()))
-        ax.set_ybound(-int(y_lim*.05), y_lim + int(y_lim*.05))
+        ax.set_ybound(-int(y_lim * .05), y_lim + int(y_lim * .05))
         if x_lim >= 10:
-            ax.set_xbound(-int(x_lim*.05), x_lim + int(x_lim*.05))
-            ax.set_xticks(range(0, x_lim+1, 5))
-            ax.set_xticks(range(0, x_lim+1, 1), minor=True)
+            ax.set_xbound(-int(x_lim * .05), x_lim + int(x_lim * .05))
+            ax.set_xticks(range(0, x_lim + 1, 5))
+            ax.set_xticks(range(0, x_lim + 1, 1), minor=True)
         else:
-            ax.set_xbound(-int(x_lim*.1), x_lim + int(x_lim*.1))
-            ax.set_xticks(range(0, x_lim+1, 1))
+            ax.set_xbound(-int(x_lim * .1), x_lim + int(x_lim * .1))
+            ax.set_xticks(range(0, x_lim + 1, 1))
         ax.set_xlabel('Force (N)')
         ax.invert_yaxis() # Measures Depth from the top of snowpack, so invert Y axis
         ax.set_ylabel('Depth (mm)')
@@ -266,15 +274,19 @@ class SMP(object):
         plt.close(fig)
             
     
-    def as_dataframe(self):
+    def as_dataframe(self, use_raw=False):
         '''
-        may be useful at some point in the future
+        may be useful at some point in the future.
+        use_raw (default False): use the valid-data subset rather than the raw SMP data
         '''
-        return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
+        if use_raw:
+            return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
+        else:
+            return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
     
     def export_to_csv(self, out_csv):
         '''
-        export the depth/force columns to a csv with included 7-line header
+        using the raw data array, export the depth/force columns to a csv with included 7-line header
         '''
         serial = self.header['SMP Serial']
         sampleTotal = int(self.data.shape[0]) # TOT_SAMPLE field from header is not the number of measurements!
@@ -286,9 +298,31 @@ class SMP(object):
         np.savetxt(out_csv, self.data, delimiter=',', comments='#', fmt='%.6f',
                       header=csv_header.format(serial, tstamp.strftime("%Y-%m-%d"), tstamp.strftime("%H:%M:%S"), lat, lon, sampleTotal))
     
-    
+def moving_average(arr, n=1000):
+    '''
+    Smooths the input 1D array (for our purposes, the SMP force data) with a running average 
+    with window size of n. Pads the front of the array with nan values to return an array 
+    of the same length as the input array
+    '''
+    ret = np.cumsum(arr, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    ret[n - 1:] = ret[n - 1:] / n
+    ret[:n - 1] = np.nan
+    return ret    
 
 if __name__ == "__main__":
+    #placeholder microstructure coefficients
+    msCoef = {'a1': 420.47, #+-8.31 kg/m-3
+              'a2': 102.47, #+-4.24 N-1
+              'a3': -121.15, #+-10.65 N-1mm-1
+              'a4': -169.96, #+-18.70 mm-1
+              'b1': 0.0715, #+-0.0058 mm
+              'b2': 0.299, #+-0.011 mm-1
+              'b3': 0.0149, #+-0.0018 N-1
+              'c1': 0.131, #+-0.0081 mm
+              'c2': 0.155, #+-0.015 mm-1
+              'c3': 0.0291} #+-0.0024 N-1
+    
     workdir = os.path.abspath(os.path.dirname(__file__))
     os.chdir(workdir)
     input_data = os.path.join(workdir, 'indata')
@@ -297,7 +331,8 @@ if __name__ == "__main__":
     # walk through subdirectories of input_data, looking for SMP .pnt files
     for root, folders, files in os.walk(input_data):
         for f in files:
-            pnt_list.append(os.path.join(root, f))
+            if f.endswith('.pnt'):
+                pnt_list.append(os.path.join(root, f))
     
     for pnt in pnt_list:
         dirname, basename = os.path.split(pnt)
@@ -322,17 +357,6 @@ if __name__ == "__main__":
         p = SMP(pnt)
         if not os.path.isfile(outcsvabs): p.export_to_csv(outcsvabs)
         if not os.path.isfile(outpng): p.plot_quicklook(outpng)
-        
-        #placeholder microstucture coefficients
-        msCoef = {'a1': 420.47, #+-8.31 kg/m-3
-            'a2': 102.47, #+-4.24 N-1
-            'a3': -121.15, #+-10.65 N-1mm-1
-            'a4': -169.96, #+-18.70 mm-1
-            'b1': 0.0715, #+-0.0058 mm
-            'b2': 0.299, #+-0.011 mm-1
-            'b3': 0.0149, #+-0.0018 N-1
-            'c1': 0.131, #+-0.0081 mm
-            'c2': 0.155, #+-0.015 mm-1
-            'c3': 0.0291} #+-0.0024 N-1
-        #shot_noise(self)
-        #est_microstucture(self, msCoef)
+                
+        #p.shot_noise()
+        #curr_ms = p.est_microstructure(msCoef)
