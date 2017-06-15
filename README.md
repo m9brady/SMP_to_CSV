@@ -39,3 +39,7 @@ python SMP_to_CSV.py
 ```
 
 4. All output CSV/PNG files will be sent to the "outdata" folder
+
+## License
+This dataset is licensed under the [Open Government License of Canada](http://open.canada.ca/en/open-government-licence-canada)
+and is subject to the [Copyright Act of Canada](http://laws-lois.justice.gc.ca/eng/acts/C-42/index.html). Additional infomration can be found at the [Government of Canada's Open Government portal](http://open.canada.ca)
