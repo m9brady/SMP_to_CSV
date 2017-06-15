@@ -39,8 +39,10 @@ class SMP(object):
         try:
             firstIdx = ind[0]
         # if we can't find any peaks, just return the zero-th index
+        # TODO: Modify so that a flag is raised when the surface pick fails
         except IndexError:
             firstIdx = 0 
+        print(firstIdx)
         return firstIdx
     
     
@@ -57,20 +59,29 @@ class SMP(object):
         longCorSmpEx = np.empty(arrLen)
         longCorSmpC = np.empty(arrLen)
         ssaSmp = np.empty(arrLen)
-        #TODO: Possible refactor to use broadcasted math instead of for-loop
-        for i in xrange(arrLen - 1): # MB: why arrLen - 1?
-            log_medf_z = np.log(self.shotNoise[i,0])
-            L = self.shotNoise[i,4]
-            densSmp[i] = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
-            phiSmp = densSmp[i] / 916.7
-            longCorSmpEx[i] = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
-            longCorSmpC[i] = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
-            ssaSmp[i] = (4 * (1 - phiSmp)) / longCorSmpC[i]
+        
+        log_medf_z = np.log(self.shotNoise[:,0])
+        L = self.shotNoise[:,4]
+        densSmp = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
+        phiSmp = densSmp / 916.7
+        longCorSmpEx = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
+        longCorSmpC = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
+        ssaSmp = (4 * (1 - phiSmp)) / longCorSmpC
+        
+#       Old looping method for microstucture
+#        for i in xrange(arrLen):
+#            log_medf_z = np.log(self.shotNoise[i,0])
+#            L = self.shotNoise[i,4]
+#            densSmp[i] = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
+#            phiSmp = densSmp[i] / 916.7
+#            longCorSmpEx[i] = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
+#            longCorSmpC[i] = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
+#            ssaSmp[i] = (4 * (1 - phiSmp)) / longCorSmpC[i]
             
         self.microStructure = np.column_stack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
         return 0 # success
     
-    def est_shot_noise(self, A_cone=19.6, window_size_mm=2, overlap_mm=0.5):
+    def est_shot_noise(self, A_cone=19.6, window_size_mm=2.0, overlap=0.5):
         '''
         Estimate the shot noise parameters based on Löwe and van Herwijnen, 2012
         Ported from various sources written by Martin Proksch, J-B Madore, and Josh King
@@ -78,7 +89,7 @@ class SMP(object):
         samplesDist = self.header['Samples Dist [mm]']
         windowSize = int(round(window_size_mm / samplesDist))
         #stepSizeMM = overlap_mm*window_size_mm
-        stepSize = int(overlap_mm * windowSize)
+        stepSize = int(overlap * windowSize)
         #nWindows=int(np.floor(self.subset[:,1].size/windowSize))
         nSteps = int(np.floor(self.subset[:,1].size / stepSize - 1))
         
@@ -91,14 +102,14 @@ class SMP(object):
         L = np.empty(nSteps)
         #plt.plot(p.data[:,0],p.data[:,1])
 
-        for i_step in range(1, nSteps):
-            z_min = (i_step - 1) * stepSize + 1
-            z_max = (i_step - 1) * stepSize + windowSize
+        for i_step in range(0, nSteps):
+            z_min = i_step * stepSize
+            z_max = i_step * stepSize + windowSize
             f_z = self.subset[z_min:z_max,1]
             N = len(f_z)
         
-            # calc z-vector
-            z[i_step] = (i_step - 1) * stepSize + stepSize
+            # calc z-vector TODO: Check this, not sure if its valid
+            z[i_step] = i_step * stepSize + stepSize
             z[i_step] = round(z[i_step] * samplesDist * 100) / 100
           
             # calc median penetration force
@@ -106,7 +117,7 @@ class SMP(object):
             
             # calc shot noise
             c1 = f_z.mean()
-            c2 = f_z.var() * (len(f_z) - 1) / len(f_z) # len() can be used because f_z is 1D
+            c2 = f_z.var()  # var is population var by default with np
             A = signal.detrend(f_z - c1)
             C_f = np.correlate(A, A, mode='full')
             
@@ -118,7 +129,7 @@ class SMP(object):
             C_f /= lags # normalize by n-lag
             
             #Shot noise parameters
-            delta[i_step] = -3. / 2 * C_f[N] / (C_f[N+1] - C_f[N]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
+            delta[i_step] = -3. / 2 * C_f[N-1] / (C_f[N] - C_f[N-1]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
             lam[i_step] = 4. / 3 * np.power(c1, 2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
             f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
             L[i_step] = np.power(A_cone / lam[i_step] , 1. / 3) 
