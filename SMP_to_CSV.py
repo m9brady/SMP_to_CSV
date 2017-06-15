@@ -1,14 +1,18 @@
 try:
     import os
+    import sys 
+    # hacky bandaid
+    sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     import struct
     import datetime
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
-    from tools_ext import detect_peaks
+    from tools_ext import detect_peaks # reason for hacky bandaid
     from scipy import signal 
 except ImportError as err:
     print err
+    raise
     
 
 class SMP(object):
@@ -16,21 +20,28 @@ class SMP(object):
         self.header, self.units = self.retrieve_header(binaryfile)
         self.data = self.extract_data(binaryfile, self.header)
         self.subset = self.data[self.pick_surf():,:] # the valid data subset (from top-of-snowpack)
-        self.shotNoise = None # may not always need to estimate microstructure, so we initialize as None to save time
+        self.shotNoise = None # may not always need to estimate shot noise, so we initialize as None to save processing time
+        self.microStructure = None # may not always need to estimate microstructure, so we initialize as None to save processing time
            
     def pick_surf(self, sWindow=1000):
         '''
         Identifies the beginning of valid SMP force measurements (the snow surface) and returns 
-        the row index for use in removing spurious force measurements from the raw data array
+        the row index for use in slicing the beginning of the raw data array to avoid spurious
+        SMP force measurements
         '''
-        force_data = self.data[:,1]
+        forceData = self.data[:,1]
         # first, smooth the raw data to reduce noise
-        smoothed_force = moving_average(force_data, sWindow)
-        noiseMed = np.median(smoothed_force[sWindow:sWindow * 2]) # using median for now
+        smoothedForce = moving_average(forceData, sWindow)
+        noiseMed = np.median(smoothedForce[sWindow:sWindow * 2]) # using median for now
         # identify the pen-force peaks, toggle show to True to display inline plot
-        ind = detect_peaks(smoothed_force, mph=noiseMed*2, mpd=sWindow, show=False)
+        ind = detect_peaks(smoothedForce, mph=noiseMed * 2, mpd=sWindow, show=False)
         # return the first pen-force peak (i.e. the top of the snowpack)
-        return(ind[0])
+        try:
+            firstIdx = ind[0]
+        # if we can't find any peaks, just return the zero-th index
+        except IndexError:
+            firstIdx = 0 
+        return firstIdx
     
     
     def est_microstructure(self, coef):
@@ -47,7 +58,7 @@ class SMP(object):
         longCorSmpC = np.empty(arrLen)
         ssaSmp = np.empty(arrLen)
         #TODO: Possible refactor to use broadcasted math instead of for-loop
-        for i in xrange(arrLen - 1): # MB: why -1?
+        for i in xrange(arrLen - 1): # MB: why arrLen - 1?
             log_medf_z = np.log(self.shotNoise[i,0])
             L = self.shotNoise[i,4]
             densSmp[i] = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
@@ -55,20 +66,21 @@ class SMP(object):
             longCorSmpEx[i] = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
             longCorSmpC[i] = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
             ssaSmp[i] = (4 * (1 - phiSmp)) / longCorSmpC[i]
-           
-        return np.hstack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
+            
+        self.microStructure = np.column_stack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
+        return 0 # success
     
-    def shot_noise(self, A_cone=19.6, window_size_mm=2, overlap_mm=0.5):
+    def est_shot_noise(self, A_cone=19.6, window_size_mm=2, overlap_mm=0.5):
         '''
         Estimate the shot noise parameters based on Löwe and van Herwijnen, 2012
         Ported from various sources written by Martin Proksch, J-B Madore, and Josh King
         '''
         samplesDist = self.header['Samples Dist [mm]']
-        windowSize = int(round(window_size_mm/samplesDist))
+        windowSize = int(round(window_size_mm / samplesDist))
         #stepSizeMM = overlap_mm*window_size_mm
-        stepSize = int(overlap_mm*windowSize)
+        stepSize = int(overlap_mm * windowSize)
         #nWindows=int(np.floor(self.subset[:,1].size/windowSize))
-        nSteps = int(np.floor(self.subset[:,1].size/stepSize-1))
+        nSteps = int(np.floor(self.subset[:,1].size / stepSize - 1))
         
         #TODO: Possible refactor to a single 2D array with columns for each parameter
         z = np.empty(nSteps)
@@ -83,13 +95,13 @@ class SMP(object):
             z_min = (i_step - 1) * stepSize + 1
             z_max = (i_step - 1) * stepSize + windowSize
             f_z = self.subset[z_min:z_max,1]
-            N = len(f_z);
+            N = len(f_z)
         
-            # calc z-vector:
+            # calc z-vector
             z[i_step] = (i_step - 1) * stepSize + stepSize
             z[i_step] = round(z[i_step] * samplesDist * 100) / 100
           
-            # calc median penetration force:
+            # calc median penetration force
             medf_z[i_step] = np.median(f_z)
             
             # calc shot noise
@@ -98,12 +110,12 @@ class SMP(object):
             A = signal.detrend(f_z - c1)
             C_f = np.correlate(A, A, mode='full')
             
-            #Normalize xcorr by n-lags for 'unbiased'
+            # Normalize xcorr by n-lags for 'unbiased'
             maxlag = N - 1
             lags = np.append(np.linspace(N - maxlag, N - 1, N - 1), N)
             lags = np.append(lags, np.linspace(N - 1, N - maxlag, N - 1))
             lags *= np.repeat(1, C_f.size)
-            C_f /= lags #normalize by n-lag
+            C_f /= lags # normalize by n-lag
             
             #Shot noise parameters
             delta[i_step] = -3. / 2 * C_f[N] / (C_f[N+1] - C_f[N]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
@@ -111,7 +123,7 @@ class SMP(object):
             f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
             L[i_step] = np.power(A_cone / lam[i_step] , 1. / 3) 
         
-        self.shotNoise = np.hstack((medf_z, delta, lam, f_0, L))
+        self.shotNoise = np.column_stack((medf_z, delta, lam, f_0, L))
         return 0 # success
     
     def retrieve_header(self, pnt_file):
@@ -284,7 +296,7 @@ class SMP(object):
     def as_dataframe(self, use_raw=False):
         '''
         may be useful at some point in the future.
-        use_raw (default False): use the valid-data subset rather than the raw SMP data
+        use_raw (default is False): use the valid-data subset rather than the raw SMP data
         '''
         if use_raw:
             return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
@@ -318,7 +330,8 @@ def moving_average(arr, n=1000):
     return ret    
 
 if __name__ == "__main__":
-    #placeholder microstructure coefficients
+   
+    # placeholder microstructure coefficients
     msCoef = {'a1': 420.47, #+-8.31 kg/m-3
               'a2': 102.47, #+-4.24 N-1
               'a3': -121.15, #+-10.65 N-1mm-1
@@ -330,8 +343,9 @@ if __name__ == "__main__":
               'c2': 0.155, #+-0.015 mm-1
               'c3': 0.0291} #+-0.0024 N-1
     
-    workdir = os.path.abspath(os.path.dirname(__file__))
-    os.chdir(workdir)
+    #TODO: Come up with better way to manage workdir
+    #workdir = os.path.abspath(os.path.dirname(__file__))
+    workdir = os.getcwd()
     input_data = os.path.join(workdir, 'indata')
     output_data = os.path.join(workdir, 'outdata')
     pnt_list = []
@@ -340,30 +354,32 @@ if __name__ == "__main__":
         for f in files:
             if f.endswith('.pnt'):
                 pnt_list.append(os.path.join(root, f))
-    
+
     for pnt in pnt_list:
-        dirname, basename = os.path.split(pnt)
-        dirname = dirname.split("\\")
-        unique_key = os.path.splitext(basename)[0]
+        dirName, baseName = os.path.split(pnt)
+        dirName = dirName.split("\\")
+        uniqueKey = os.path.splitext(baseName)[0]
         ################################ WARNING ###############################
         ## The following variables assume a very specific directory structure ##
         ## that was defined by the project lead                               ##
         ################################ WARNING ###############################
         try:
-            code = dirname[-3][-1]
-            site = dirname[-1]
-            date = dirname[-2].split("_")[-1]
+            code = dirName[-3][-1]
+            site = dirName[-1]
+            date = dirName[-2].split("_")[-1]
         except IndexError:
             print "Error: cannot extract site information from filepath"
-            exit(1)
-        outcsv = "SMP{}_{}_{}_{}.csv".format(code, site, date, unique_key)
-        outcsvabs = os.path.join(output_data, outcsv)
-        outpng = outcsvabs.replace(".csv", ".png")
+            raise
+        outCsv = "SMP{}_{}_{}_{}.csv".format(code, site, date, uniqueKey)
+        outCsvAbs = os.path.join(output_data, outCsv)
+        outpPng = outCsvAbs.replace(".csv", ".png")
         # still-alive msg
-        print outcsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list))
+        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)),
         p = SMP(pnt)
-        if not os.path.isfile(outcsvabs): p.export_to_csv(outcsvabs)
-        if not os.path.isfile(outpng): p.plot_quicklook(outpng)
-                
-        #p.shot_noise()
-        #curr_ms = p.est_microstructure(msCoef)
+        # dump to CSV/PNG
+        if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
+        if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
+        # do a science!
+        p.est_shot_noise()
+        p.est_microstructure(msCoef)
+        #TODO: add something that uses the microstructure
