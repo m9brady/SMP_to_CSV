@@ -13,19 +13,23 @@ The "detect_peaks" and associated "_plot" helper functions are from the [Biomech
 
 2. Put the SMP measurement files ("*.pnt") into the "indata" folder using the following directory structure:
 
-	* indata
-		* SMP
-			* SMP A
-			  * SMPA_YYYYMMDD where YYYYMMDD is the day the SMP measurements were taken
-				* siteName
-				  * A???????.pnt where ?????? is the unique observation id from the SMP tool
-				  * A???????.pnt where ?????? is the unique observation id from the SMP tool
-			* SMP B
-			  * SMPB_YYYYMMDD
-				* siteName
-				  * B???????.pnt where ?????? is the unique observation id from the SMP tool
-				  * B???????.pnt where ?????? is the unique observation id from the SMP tool
-			* repeat for as many SMP groups that you may have
+```
+indata
+|-- SMP
+|   |-- SMP A
+|   |   |-- SMPA_YYYYMMDD (where YYYYMMDD is the day the SMP measurements were taken)
+|   |   |   |-- siteName
+|   |   |   |   |-- A???????.pnt (where ?????? is the unique observation id from the SMP tool)
+|   |-- SMP B
+|   |   |-- SMPB_YYYYMMDD 
+|   |   |   |-- siteName
+|   |   |   |   |-- B???????.pnt 
+|   |-- SMP C
+|   |   |-- SMPC_YYYYMMDD 
+|   |   |   |-- siteName
+|   |   |   |   |-- C???????.pnt 
+|   |   |   |   |			
+```
 
 3. Run the SMP_to_CSV.py script from the same directory where "indata" and "outdata" are located. 
 
