@@ -103,7 +103,7 @@ class SMP(object):
             z[i_step] = round(z[i_step] * samplesDist * 100) / 100
           
             # calc median penetration force
-            medf_z[i_step] = f_z.median()
+            medf_z[i_step] = np.median(f_z)
             
             # calc shot noise
             c1 = f_z.mean()
