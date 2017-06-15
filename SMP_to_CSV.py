@@ -8,6 +8,7 @@ try:
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
+    plt.ioff() # stop displaying quicklook plots by default
     from tools_ext import detect_peaks # reason for hacky bandaid
     from scipy import signal 
 except ImportError as err:
@@ -94,19 +95,19 @@ class SMP(object):
         for i_step in range(1, nSteps):
             z_min = (i_step - 1) * stepSize + 1
             z_max = (i_step - 1) * stepSize + windowSize
-            f_z = self.subset[z_min:z_max,1]
-            N = len(f_z)
+            f_z = self.subset[z_min:z_max, 1]
+            N = len(f_z) # len() can be used because f_z is 1D
         
             # calc z-vector
             z[i_step] = (i_step - 1) * stepSize + stepSize
             z[i_step] = round(z[i_step] * samplesDist * 100) / 100
           
             # calc median penetration force
-            medf_z[i_step] = np.median(f_z)
+            medf_z[i_step] = f_z.median()
             
             # calc shot noise
             c1 = f_z.mean()
-            c2 = f_z.var() * (len(f_z) - 1) / len(f_z) # len() can be used because f_z is 1D
+            c2 = f_z.var() * (N - 1) / N #
             A = signal.detrend(f_z - c1)
             C_f = np.correlate(A, A, mode='full')
             
@@ -114,14 +115,14 @@ class SMP(object):
             maxlag = N - 1
             lags = np.append(np.linspace(N - maxlag, N - 1, N - 1), N)
             lags = np.append(lags, np.linspace(N - 1, N - maxlag, N - 1))
-            lags *= np.repeat(1, C_f.size)
+            lags *= np.repeat(1, C_f.size) # MB: lags is just being multiplied by 1?
             C_f /= lags # normalize by n-lag
             
             #Shot noise parameters
             delta[i_step] = -3. / 2 * C_f[N] / (C_f[N+1] - C_f[N]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
-            lam[i_step] = 4. / 3 * np.power(c1, 2) / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
+            lam[i_step] = 4. / 3 * c1 ** 2 / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
             f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
-            L[i_step] = np.power(A_cone / lam[i_step] , 1. / 3) 
+            L[i_step] = (A_cone / lam[i_step]) ** (1. / 3) 
         
         self.shotNoise = np.column_stack((medf_z, delta, lam, f_0, L))
         return 0 # success
@@ -270,7 +271,7 @@ class SMP(object):
         
     def plot_quicklook(self, out_png):
         '''
-        Plot a quick depth/force profile using matplotlib, exporting it to a PNG
+        Create a quick depth/force profile of the raw SMP data using matplotlib, exporting it to a PNG
         '''
         fig = plt.figure()
         ax = fig.add_subplot(111)
@@ -359,10 +360,10 @@ if __name__ == "__main__":
         dirName, baseName = os.path.split(pnt)
         dirName = dirName.split("\\")
         uniqueKey = os.path.splitext(baseName)[0]
-        ################################ WARNING ###############################
-        ## The following variables assume a very specific directory structure ##
-        ## that was defined by the project lead                               ##
-        ################################ WARNING ###############################
+        ################################ WARNING ##############################
+        ##      The following variables assume a very specific directory     ##
+        ##          structure that was defined by the project lead           ##
+        ################################ WARNING ##############################
         try:
             code = dirName[-3][-1]
             site = dirName[-1]
@@ -374,7 +375,7 @@ if __name__ == "__main__":
         outCsvAbs = os.path.join(output_data, outCsv)
         outpPng = outCsvAbs.replace(".csv", ".png")
         # still-alive msg
-        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)),
+        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)), 
         p = SMP(pnt)
         # dump to CSV/PNG
         if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
@@ -382,4 +383,5 @@ if __name__ == "__main__":
         # do a science!
         p.est_shot_noise()
         p.est_microstructure(msCoef)
+        print p.microStructure.shape # debug
         #TODO: add something that uses the microstructure
