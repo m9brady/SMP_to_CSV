@@ -20,7 +20,12 @@ class SMP(object):
     def __init__(self, binaryfile):
         self.header, self.units = self.retrieve_header(binaryfile)
         self.data = self.extract_data(binaryfile, self.header)
-        self.subset = self.data[self.pick_surf():,:] # the valid data subset (from top-of-snowpack)
+        snowSurf = self.pick_surf()
+        # if there is no peak found, do something
+        if not snowSurf:
+            self.subset = self.data.copy() #TODO: decide what to do if pick_surf() returns None
+        else:
+            self.subset = self.data[snowSurf:,:] # the valid data subset (from top-of-snowpack)
         self.shotNoise = None # may not always need to estimate shot noise, so we initialize as None to save processing time
         self.microStructure = None # may not always need to estimate microstructure, so we initialize as None to save processing time
            
@@ -39,11 +44,9 @@ class SMP(object):
         # return the first pen-force peak (i.e. the top of the snowpack)
         try:
             firstIdx = ind[0]
-        # if we can't find any peaks, just return the zero-th index
-        # TODO: Modify so that a flag is raised when the surface pick fails
+        # if we can't find any peaks, just return None which gets handled in __init__()
         except IndexError:
-            firstIdx = 0 
-        print(firstIdx)
+            firstIdx = None 
         return firstIdx
     
     
@@ -69,16 +72,6 @@ class SMP(object):
         longCorSmpC = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
         ssaSmp = (4 * (1 - phiSmp)) / longCorSmpC
         
-#       Old looping method for microstucture
-#        for i in xrange(arrLen):
-#            log_medf_z = np.log(self.shotNoise[i,0])
-#            L = self.shotNoise[i,4]
-#            densSmp[i] = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
-#            phiSmp = densSmp[i] / 916.7
-#            longCorSmpEx[i] = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
-#            longCorSmpC[i] = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
-#            ssaSmp[i] = (4 * (1 - phiSmp)) / longCorSmpC[i]
-            
         self.microStructure = np.column_stack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
         return 0 # success
     
@@ -103,15 +96,14 @@ class SMP(object):
         L = np.empty(nSteps)
         #plt.plot(p.data[:,0],p.data[:,1])
 
-        for i_step in range(0, nSteps):
+        for i_step in xrange(nSteps):
             z_min = i_step * stepSize
             z_max = i_step * stepSize + windowSize
             f_z = self.subset[z_min:z_max,1]
             N = len(f_z)
         
             # calc z-vector TODO: Check this, not sure if its valid
-            z[i_step] = i_step * stepSize + stepSize
-            z[i_step] = round(z[i_step] * samplesDist * 100) / 100
+            z[i_step] = round((i_step * stepSize + stepSize) * samplesDist * 100) / 100
           
             # calc median penetration force
             medf_z[i_step] = np.median(f_z)
@@ -389,8 +381,8 @@ if __name__ == "__main__":
         print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)), 
         p = SMP(pnt)
         # dump to CSV/PNG
-        if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
-        if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
+        #if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
+        #if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
         # do a science!
         p.est_shot_noise()
         p.est_microstructure(msCoef)
