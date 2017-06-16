@@ -360,26 +360,15 @@ if __name__ == "__main__":
                 pnt_list.append(os.path.join(root, f))
 
     for pnt in pnt_list:
-        dirName, baseName = os.path.split(pnt)
-        dirName = dirName.split("\\")
+        baseName = os.path.basename(pnt)
         uniqueKey = os.path.splitext(baseName)[0]
-        ################################ WARNING ##############################
-        ##      The following variables assume a very specific directory     ##
-        ##          structure that was defined by the project lead           ##
-        ################################ WARNING ##############################
-        try:
-            code = dirName[-3][-1]
-            site = dirName[-1]
-            date = dirName[-2].split("_")[-1]
-        except IndexError:
-            print "Error: cannot extract site information from filepath"
-            raise
-        outCsv = "SMP{}_{}_{}_{}.csv".format(code, site, date, uniqueKey)
+        p = SMP(pnt)
+        date = '{Y}{M}{D}'.format(p.header['Year'], str(p.header['Month']).zfill(2), str(p.header['Day']).zfill(2))
+        outCsv = "SMP_{}_{}.csv".format(date, uniqueKey)
         outCsvAbs = os.path.join(output_data, outCsv)
         outpPng = outCsvAbs.replace(".csv", ".png")
         # still-alive msg
-        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)), 
-        p = SMP(pnt)
+        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)) 
         # dump to CSV/PNG
         #if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
         #if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
