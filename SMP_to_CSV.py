@@ -363,12 +363,12 @@ if __name__ == "__main__":
         baseName = os.path.basename(pnt)
         uniqueKey = os.path.splitext(baseName)[0]
         p = SMP(pnt)
-        date = '{Y}{M}{D}'.format(p.header['Year'], str(p.header['Month']).zfill(2), str(p.header['Day']).zfill(2))
+        date = '{Y}{M}{D}'.format(Y=p.header['Year'], M=str(p.header['Month']).zfill(2), D=str(p.header['Day']).zfill(2))
         outCsv = "SMP_{}_{}.csv".format(date, uniqueKey)
         outCsvAbs = os.path.join(output_data, outCsv)
         outpPng = outCsvAbs.replace(".csv", ".png")
         # still-alive msg
-        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)) 
+        print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)), 
         # dump to CSV/PNG
         #if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
         #if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
