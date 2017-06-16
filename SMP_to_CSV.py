@@ -21,7 +21,12 @@ class SMP(object):
         self.header, self.units = self.retrieve_header(binaryfile)
         self.data = self.extract_data(binaryfile, self.header)
         self.subset = self.filter_arr() #Check for negative values, short runs, airshots
-        self.subset = self.subset[self.pick_surf():,:] # the valid data subset (from top-of-snowpack)
+        snowSurf = self.pick_surf()
+        # if there is no peak found, do something
+        if not snowSurf:
+            self.subset = self.data.copy() #TODO: decide what to do if pick_surf() returns None
+        else:
+            self.subset = self.subset[snowSurf:,:] # the valid data subset (from top-of-snowpack)
         self.shotNoise = None # may not always need to estimate shot noise, so we initialize as None to save processing time
         self.microStructure = None # may not always need to estimate microstructure, so we initialize as None to save processing time
            
@@ -39,13 +44,11 @@ class SMP(object):
         # return the first pen-force peak (i.e. the top of the snowpack)
         try:
             firstIdx = ind[0]
-        # if we can't find any peaks, just return the zero-th index
+        # if we can't find any peaks, just return None which gets handled in __init__()
         # TODO: Modify so that a flag is raised when the surface pick fails
         # TODO: Pick soil surface
         except IndexError:
-            firstIdx = 0 
-        #snowThickness = round((self.subset[-1,0] - (firstIdx*self.header['Samples Dist [mm]']))) #in mm
-        #print(snowThickness)
+            firstIdx = None 
         return firstIdx
     
     def filter_arr(self, zCor = -1):
@@ -94,6 +97,7 @@ class SMP(object):
         longCorSmpC = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
         ssaSmp = (4 * (1 - phiSmp)) / longCorSmpC
             
+
         self.microStructure = np.column_stack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
         return 0 # success
     
@@ -118,15 +122,14 @@ class SMP(object):
         L = np.empty(nSteps)
         #plt.plot(p.data[:,0],p.data[:,1])
 
-        for i_step in range(0, nSteps):
+        for i_step in xrange(nSteps):
             z_min = i_step * stepSize
             z_max = i_step * stepSize + windowSize
             f_z = self.subset[z_min:z_max,1]
             N = len(f_z)
         
             # calc z-vector TODO: Check this, not sure if its valid
-            z[i_step] = i_step * stepSize + stepSize
-            z[i_step] = round(z[i_step] * samplesDist * 100) / 100
+            z[i_step] = round((i_step * stepSize + stepSize) * samplesDist * 100) / 100
           
             # calc median penetration force
             medf_z[i_step] = np.median(f_z)
@@ -383,29 +386,18 @@ if __name__ == "__main__":
                 pnt_list.append(os.path.join(root, f))
 
     for pnt in pnt_list:
-        dirName, baseName = os.path.split(pnt)
-        dirName = dirName.split("\\")
+        baseName = os.path.basename(pnt)
         uniqueKey = os.path.splitext(baseName)[0]
-        ################################ WARNING ##############################
-        ##      The following variables assume a very specific directory     ##
-        ##          structure that was defined by the project lead           ##
-        ################################ WARNING ##############################
-        try:
-            code = dirName[-3][-1]
-            site = dirName[-1]
-            date = dirName[-2].split("_")[-1]
-        except IndexError:
-            print "Error: cannot extract site information from filepath"
-            raise
-        outCsv = "SMP{}_{}_{}_{}.csv".format(code, site, date, uniqueKey)
+        p = SMP(pnt)
+        date = '{Y}{M}{D}'.format(Y=p.header['Year'], M=str(p.header['Month']).zfill(2), D=str(p.header['Day']).zfill(2))
+        outCsv = "SMP_{}_{}.csv".format(date, uniqueKey)
         outCsvAbs = os.path.join(output_data, outCsv)
         outpPng = outCsvAbs.replace(".csv", ".png")
         # still-alive msg
         print outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)), 
-        p = SMP(pnt)
         # dump to CSV/PNG
-        if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
-        if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
+        #if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
+        #if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
         # do a science!
         p.est_shot_noise( window_size_mm=2.5, overlap=0.5)
         p.est_microstructure(msCoef)
