@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import print_function # py2/3 print compatibility, since JK seems to like printing py3 style
 try:
     import os
@@ -23,6 +24,7 @@ class SMP(object):
         self.data = self.extract_data(binaryfile, self.header)
         self.qFlags = {'snowSurfaceFound': False, # by default, we have not defined the surfaces within the SMP measurement data
                        'soilSurfaceFound': False, 
+                       'shortRun': False, # flag to denote a too-shallow SMP measurement
                        'C1': False, # C1, C2, C3, C4 qual flags as per [Pielmeier & Marshall 2009]
                        'C2': False, 
                        'C3': False,
@@ -31,21 +33,20 @@ class SMP(object):
         self.microStructure = None # may not always need to estimate microstructure, so we initialize as None to save processing time
         
         self.subset = self.filter_arr() # Filter for negative values, short runs, airshots
-        self.snowSurf = self.pick_surf('snow') # tuple of (depth value, self.subset array index)
-        self.soilSurf = self.pick_surf('soil') # tuple of (depth value, self.subset array index)
+        self.snowSurf = self.pick_surf('snow') # depth value (mm)
+        self.soilSurf = self.pick_surf('soil') # depth value (mm)
         
         #TODO: decide what to do if we can't find the snow surface
-        #TODO: since we are about to reshape self.subset, the array indices in 
-        # self.snowSurf and self.soilSurf will only be useful when indexing self.data
         if not self.qFlags['snowSurfaceFound']:
-            pass
+            pass # if snowsurf isn't found, don't bother checking for soilsurf, just leave self.subset alone
         else:
-            snowSurfIdx = self.snowSurf[1]
+            snowSurfIdx = np.where(self.subset[:,0] == self.snowSurf)[0][0]
             if not self.qFlags['soilSurfaceFound']:
                 # the valid data subset (from snow surface to last measured depth)
                 self.subset = self.subset[snowSurfIdx:,:] 
             else:
-                soilSurfIdx = self.soilSurf[1] + 1 # need to increment by 1 for the slicing to include the last value
+                # need to increment soilSurfIdx by 1 for the slicing to include the last value
+                soilSurfIdx = np.where(self.subset[:,0] == self.soilSurf)[0][0] + 1 
                 # the valid data subset (from snow surface to soil surface)
                 self.subset = self.subset[snowSurfIdx:soilSurfIdx,:] 
             
@@ -60,34 +61,34 @@ class SMP(object):
         
         **sWindow**: The size of the smoothing window for the noise-reducing moving-average approach *(default: 1000 )*
         '''
-        # first, smooth the raw data to reduce noise
+        # snow surface
         if surfType == 'snow':
+            # first, smooth the filtered data to reduce noise
             smoothedForce = moving_average(self.subset[:,1], sWindow)
             noiseMed = np.median(smoothedForce[sWindow:sWindow * 2]) # using median for now
             # identify the pen-force peaks, toggle show to True to display inline plot
             ind = detect_peaks(smoothedForce, mph=noiseMed * 2, mpd=sWindow, show=False)
-            # return the first pen-force peak (i.e. the top of the snowpack for 'snow' surfType)
+            # return the **first** pen-force peak (i.e. the top of the snowpack)
             try:
                 surfIdx = ind[0]
             # if we can't find any peaks, just return None which gets handled in __init__()
-            # TODO: Modify so that a flag is raised when the surface pick fails
             except IndexError:
-                print("Error when locating the snow surface")
-                raise
+                print("***Error: Cannot locate the snow surface")
+                return None
+            # if all is well, trip the quality flag for determining the snow surface
             self.qFlags['snowSurfaceFound'] = True
             snowSurf = self.subset[surfIdx, 0] # yank the depth value using our new index
-            return snowSurf, surfIdx
-        
+            return snowSurf
+        # soil surface
         elif surfType == 'soil':
             # adapted from https://sourceforge.net/projects/pyntreader/
             depth = self.subset[:,0]
             force = self.subset[:,1]
             overload = self.header['Overload [N]']
             surfIdx = -1
-            soilSurf = depth[-1] # by default, have the soil surface be the deepest available value
-            
+            soilSurf = depth[surfIdx] # by default, have the soil surface be the deepest available value
             # if the overload value is tripped anywhere in the force data,
-            # we may have hit the ground so we do some checks
+            # the SMP may have hit the ground so we do some checks
             if force.max() >= overload:
                 surfIdx = np.argmax(force) # index of the maximum force value
                 i_thresh = np.where(depth >= depth[surfIdx] - 20)[0][0]
@@ -96,13 +97,13 @@ class SMP(object):
                 thresh = f_mean + 5 * f_std
                 while force[surfIdx] > thresh:
                     surfIdx -= 10
+                # if the current depth is shallower than the max depth,
+                # we trip the quality flag for identifying the soil surface
                 if depth[surfIdx] < soilSurf:
                     self.qFlags['soilSurfaceFound'] = True
                 soilSurf = depth[surfIdx]
-                
-            # return a tuple of (depth value, array index)
-            return soilSurf, surfIdx
-        
+            # return depth value only
+            return soilSurf
         else:
             raise ValueError("Invalid surfType argument. Must be one of ['snow', 'soil']")
             
@@ -116,6 +117,15 @@ class SMP(object):
         '''
         #TODO: Check if it's a very short run / air shot
         filteredArr = self.data.copy()
+        
+        # pass 1: short run (less than 100mm?)
+        if filteredArr[-1, 0] < 100:
+            print('***Warning: Short run encountered in dataset')
+            self.qFlags['shortRun'] = True
+        
+        # pass 2: air shot
+        
+        # pass 3: negative values
         if any(filteredArr[:,1] < 0):
             try:
                 zCor = int(raw_input("Negative force values detected. Replace with 0s (1), interpolate (2): "))
@@ -150,7 +160,7 @@ class SMP(object):
         
         log_medf_z = np.log(self.shotNoise[:,0]) #log of the window median force
         L = self.shotNoise[:,4]
-        densSmp = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (msCoef['a4'] * L)
+        densSmp = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (coef['a4'] * L)
         phiSmp = densSmp / 916.7
         longCorSmpEx = coef['b1'] + (coef['b2'] * L) + (coef['b3'] * log_medf_z)
         longCorSmpC = coef['c1'] + (coef['c2'] * L) + (coef['c3'] * log_medf_z)
@@ -385,18 +395,19 @@ class SMP(object):
     
     def plot_ms(self):
         '''
-        debug-usage, plot the microstructure arrays
+        debug-usage, plot the microstructure parameters
         '''
         fig = plt.figure(figsize=(11,8))
-        ax0 = fig.add_subplot(221, title='densSmp')
-        ax1 = fig.add_subplot(222, title='longCorSmpEx')
-        ax2 = fig.add_subplot(223, title='longCorSmpC')
-        ax3 = fig.add_subplot(224, title='ssaSmp')
+        fig.suptitle(self.header['File Name'], fontsize=16)
+        ax0 = fig.add_subplot(221, title='Density (kg m$^{-3}$)')
+        ax1 = fig.add_subplot(222, title='Exponential Correlation Length (mm)')
+        ax2 = fig.add_subplot(223, title='Correlation Length (mm)')
+        ax3 = fig.add_subplot(224, title='Specific Surface Area (m m$^{-1}$)')
         ax0.plot(self.microStructure[:,0])
         ax1.plot(self.microStructure[:,1])
         ax2.plot(self.microStructure[:,2])
         ax3.plot(self.microStructure[:,3])
-        fig.tight_layout()
+        #fig.tight_layout()
         plt.show()
     
     def as_dataframe(self, use_raw=False):
