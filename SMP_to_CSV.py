@@ -24,11 +24,13 @@ class SMP(object):
         self.data = self.extract_data(binaryfile, self.header)
         self.qFlags = {'snowSurfaceFound': False, # by default, we have not defined the surfaces within the SMP measurement data
                        'soilSurfaceFound': False, 
-                       'shortRun': False, # flag to denote a too-shallow SMP measurement
-                       'C1': False, # C1, C2, C3, C4 qual flags as per [Pielmeier & Marshall 2009]
-                       'C2': False, 
-                       'C3': False,
-                       'C4': False} 
+                       'shortRun': False, # too-shallow SMP measurement
+                       'airShot': False, # SMP device test without any snow measurements
+                       # SMP signal quality classes as per [Pielmeier & Marshall 2009]
+                       'C1': False, # C1 flag, No detected errors
+                       'C2': False, # C2 flag, Trend or offset in absolute SMP force
+                       'C3': False, # C3 flag, Dampened or disturbed SMP force micro-variance
+                       'C4': False} # C4 flag, both C2 and C3
         self.shotNoise = None # may not always need to estimate shot noise, so we initialize as None to save processing time
         self.microStructure = None # may not always need to estimate microstructure, so we initialize as None to save processing time
         
@@ -49,7 +51,11 @@ class SMP(object):
                 soilSurfIdx = np.where(self.subset[:,0] == self.soilSurf)[0][0] + 1 
                 # the valid data subset (from snow surface to soil surface)
                 self.subset = self.subset[snowSurfIdx:soilSurfIdx,:] 
-            
+    
+    # override string behaviour                
+    def __str__(self):
+        d = datetime.datetime(int(self.header['Year']), int(self.header['Month']), int(self.header['Day']), int(self.header['Hour']), int(self.header['Min']), int(self.header['Sec']))
+        return "{name} [{date}] ({count} raw observations)".format(name=self.header['File Name'], date=d.isoformat(), count=int(self.data.shape[0]))
            
     def pick_surf(self, surfType, sWindow=1000):
         '''
@@ -106,7 +112,6 @@ class SMP(object):
             return soilSurf
         else:
             raise ValueError("Invalid surfType argument. Must be one of ['snow', 'soil']")
-            
     
     def filter_arr(self, zCor=-1):
         '''
@@ -120,11 +125,15 @@ class SMP(object):
         
         # pass 1: short run (less than 100mm?)
         if filteredArr[-1, 0] < 100:
-            print('***Warning: Short run encountered in dataset')
+            print('***Warning: Short run encountered in dataset: {src}'.format(src=self.header['File Name']))
             self.qFlags['shortRun'] = True
-        
+            
         # pass 2: air shot
-        
+        force_variance = filteredArr[:,1].var(dtype=np.float64, ddof=1) # ddof=1 "...provides an unbiased estimator of the variance of a hypothetical infinite population"
+        if force_variance < 0.01:
+            print('***Warning: Short run encountered in dataset: {src}'.format(src=self.header['File Name']))
+            self.qFlags['airShot'] = True
+                
         # pass 3: negative values
         if any(filteredArr[:,1] < 0):
             try:
@@ -168,6 +177,7 @@ class SMP(object):
             
         self.microStructure = np.column_stack((densSmp, longCorSmpEx, longCorSmpC, ssaSmp))
         return 0 # success
+    
     
     def est_shot_noise(self, A_cone=19.6, window_size_mm=2.0, overlap=0.5):
         '''
@@ -402,13 +412,43 @@ class SMP(object):
         ax0 = fig.add_subplot(221, title='Density (kg m$^{-3}$)')
         ax1 = fig.add_subplot(222, title='Exponential Correlation Length (mm)')
         ax2 = fig.add_subplot(223, title='Correlation Length (mm)')
-        ax3 = fig.add_subplot(224, title='Specific Surface Area (m m$^{-1}$)')
+        ax3 = fig.add_subplot(224, title='Specific Surface Area (mm$^{-1}$)')
         ax0.plot(self.microStructure[:,0])
         ax1.plot(self.microStructure[:,1])
         ax2.plot(self.microStructure[:,2])
         ax3.plot(self.microStructure[:,3])
         #fig.tight_layout()
         plt.show()
+        
+    def plot_self(self):
+        '''
+        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling mean function (hamming window) 
+        with vertical dashed lines denoting detected snow/soil surfaces
+        '''
+        dframe = self.as_dataframe(True)
+        dframe['sub'] = dframe['Force'].copy()
+        dframe['sub'].loc[dframe['Depth'] < self.snowSurf] = None 
+        dframe['e'] = dframe['sub'].rolling(600, 100, center=True, win_type='hamming').mean()
+        
+        fig = plt.figure(figsize=(11,8))
+        fig.suptitle(self.header['File Name'], fontsize=16)
+        ax = fig.add_subplot(111)
+        dframe.plot(y='Force', x='Depth', ax=ax, label='Raw Data', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='red')
+        dframe.plot(y='sub', x='Depth', ax=ax, label="Subset of Raw", xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='cyan', linewidth=2.2)
+        dframe.plot(y='e', x='Depth', ax=ax, label='Rolling Mean (~2.5mm hamming window)', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='darkgreen')
+        
+        ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+        ax.text(self.snowSurf, dframe['Force'].max()/2, '\nSnow Surface', rotation=90., linespacing=0.5)
+        if self.qFlags['soilSurfaceFound']:
+            ax.axvline(self.soilSurf, label='Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+            ax.text(self.soilSurf, dframe['Force'].max()/2, '\nSoil Surface', rotation=90., linespacing=0.5)
+            
+        ax.set_xlabel('Depth (mm)')
+        ax.set_ylabel('Force (N)')
+        ax.legend()
+        plt.show()
+        
+        
     
     def as_dataframe(self, use_raw=False):
         '''
@@ -420,13 +460,14 @@ class SMP(object):
             return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
         else:
             return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
+        
     
     def export_to_csv(self, outCsv):
         '''
         using the raw data array, export the depth/force columns to a csv with included 7-line header
         '''
         serial = self.header['SMP Serial']
-        sampleTotal = int(self.data.shape[0]) # TOT_SAMPLE field from header is not the number of measurements!
+        sampleTotal = int(self.data.shape[0]) # "Tot Samples" field from header is not the number of measurements!
         lat = self.header['Latitude']
         lon = self.header['Longitude']
         tstamp = datetime.datetime(self.header['Year'], self.header['Month'], self.header['Day'], 
@@ -446,6 +487,13 @@ def moving_average(arr, n=1000):
     ret[n - 1:] = ret[n - 1:] / n
     ret[:n - 1] = np.nan
     return ret    
+
+def gen_msCoef(dens, ssa):
+    '''
+    Use the supplied Density and Specific Surface Area params to
+    produce bias-minimized microstructure coefficients
+    '''
+    pass
 
 if __name__ == "__main__":
    
@@ -472,20 +520,21 @@ if __name__ == "__main__":
         for f in files:
             if f.endswith('.pnt'):
                 pnt_list.append(os.path.join(root, f))
-
+    
     for pnt in pnt_list:
         baseName = os.path.basename(pnt)
         uniqueKey = os.path.splitext(baseName)[0]
         p = SMP(pnt)
         date = '{Y}{M}{D}'.format(Y=p.header['Year'], M=str(p.header['Month']).zfill(2), D=str(p.header['Day']).zfill(2))
-        outCsv = "SMP_{}_{}.csv".format(date, uniqueKey)
+        outCsv = "SMP_{d}_{k}.csv".format(d=date, k=uniqueKey)
         outCsvAbs = os.path.join(output_data, outCsv)
         outpPng = outCsvAbs.replace(".csv", ".png")
         # dump to CSV/PNG
         #if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
         #if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
         # do a science!
-        p.est_shot_noise( window_size_mm=2.5, overlap=0.5)
+        p.est_shot_noise(window_size_mm=2.5, overlap=0.5)
         p.est_microstructure(msCoef)
         # debug/still-alive message
-        print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)), p.microStructure.shape)
+        print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))
+        

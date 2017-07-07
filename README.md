@@ -7,7 +7,7 @@ The SMP class methods "retrieve_header" and "extract_data" are from the excellen
 The "detect_peaks" and associated "_plot" helper functions are from the [Biomechanics and Motor Control](https://github.com/demotu/BMC/blob/master/functions/detect_peaks.py) repo by Marcos Duarte. BMC is licensed under the [MIT Licence](https://github.com/demotu/BMC/blob/master/LICENSE.txt)
 
 ## Requirements and Usage
-*Assumes you have Python 2.7 installed with numpy, pandas and matplotlib modules*
+*Assumes you have Python 2.7 installed with numpy, scipy, pandas and matplotlib modules*
 
 ### Option A: Running the tool standalone
 
