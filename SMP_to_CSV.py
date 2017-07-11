@@ -2,7 +2,7 @@
 from __future__ import print_function # py2/3 print compatibility, since JK seems to like printing py3 style
 try:
     import os
-    import sys 
+    import sys
     # hacky bandaid
     sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     import struct
@@ -70,7 +70,8 @@ class SMP(object):
         # snow surface
         if surfType == 'snow':
             # first, smooth the filtered data to reduce noise
-            smoothedForce = moving_average(self.subset[:,1], sWindow)
+            # TODO: rolling_window is outside the SMP class. Breaks the class if imported on its own
+            smoothedForce = rolling_window(self.subset[:,1], sWindow, fun=np.mean, pad=True)
             noiseMed = np.median(smoothedForce[sWindow:sWindow * 2]) # using median for now
             # identify the pen-force peaks, toggle show to True to display inline plot
             ind = detect_peaks(smoothedForce, mph=noiseMed * 2, mpd=sWindow, show=False)
@@ -448,8 +449,6 @@ class SMP(object):
         ax.legend()
         plt.show()
         
-        
-    
     def as_dataframe(self, use_raw=False):
         '''
         may be useful at some point in the future.
@@ -475,18 +474,36 @@ class SMP(object):
         csv_header = " SMP Serial: {}\n {}\n {}\n Lat: {}\n Lon: {}\n Total Samples: {}\n Depth (mm),Force (N)"
         np.savetxt(outCsv, self.data, delimiter=',', comments='#', fmt='%.6f',
                    header=csv_header.format(serial, tstamp.strftime("%Y-%m-%d"), tstamp.strftime("%H:%M:%S"), lat, lon, sampleTotal))
-    
-def moving_average(arr, n=1000):
-    '''
-    Smooths the input 1D array (for our purposes, the SMP force data) with a running average 
-    with window size of n. Pads the front of the array with nan values to return an array 
-    of the same length as the input array
-    '''
-    ret = np.cumsum(arr, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    ret[n - 1:] = ret[n - 1:] / n
-    ret[:n - 1] = np.nan
-    return ret    
+
+    #Robust Z-Score outliers; can be used to detect ice features and or soil
+    #TODO: TESTING!; Use full data record or subset? If subset, check for it
+    def outliers(self, windowMM = 5, threshold=1, pad=False):
+        sWindow = windowMM/self.header['Samples Dist [mm]']
+        sWindow = (np.ceil(sWindow) // 2 * 2 + 1).astype(int)
+        sBins = rolling_window(self.subset[:,1], sWindow, pad=False)
+        medFilter = rolling_window(self.subset[:,1], sWindow, pad=False, fun=np.median)
+        diff = np.sqrt(np.sum((sBins - medFilter.reshape(medFilter.size,1))**2, axis=-1))
+        mAD = np.nanmedian(diff) #Median absolute dev
+        if pad:
+            padSize = np.absolute(diff.size-p.subset[:,1].size)/2
+            diff = np.lib.pad(diff, (padSize,padSize), 'constant', constant_values=np.nan)
+        rZScore = 0.6745 * diff / mAD #Robust Z-Score
+        #This will throw warnings if the pad is applied, equality does not work for NaN
+        return rZScore > np.nanmedian(rZScore) + (threshold*np.nanstd(rZScore))
+
+#Returns moving window bins of size window. Set pad to NaN fill to size of a.
+#Fun accecpts np.median, np.mean, ect...
+#Inspired by http://www.rigtorp.se/2011/01/01/rolling-statistics-numpy.html
+def rolling_window(a, window, fun=None, pad=False):
+    window = (np.ceil(window) // 2 * 2 + 1).astype(int) #round up to next odd number
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    rWindow = np.lib.stride_tricks.as_strided(a, shape=shape, strides=a.strides + (a.strides[-1],))
+    if fun:
+        rWindow = fun(rWindow, -1)
+    if pad: #This will be slow if no function is applied!
+      padSize = np.absolute(rWindow.shape[0]-a.shape[0])/2
+      rWindow = np.lib.pad(rWindow, (padSize,padSize), 'constant', constant_values=np.nan)
+    return rWindow  
 
 def gen_msCoef(dens, ssa):
     '''
