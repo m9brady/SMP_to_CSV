@@ -52,106 +52,24 @@ class SMP(object):
                 # the valid data subset (from snow surface to soil surface)
                 self.subset = self.subset[snowSurfIdx:soilSurfIdx,:] 
     
+    
     # override string behaviour                
     def __str__(self):
         d = datetime.datetime(int(self.header['Year']), int(self.header['Month']), int(self.header['Day']), int(self.header['Hour']), int(self.header['Min']), int(self.header['Sec']))
         return "{name} [{date}] ({count} raw observations)".format(name=self.header['File Name'], date=d.isoformat(), count=int(self.data.shape[0]))
-           
-    def pick_surf(self, surfType, sWindow=1000):
+
+
+    def as_dataframe(self, use_raw=False):
         '''
-        Identifies the beginning(end) of valid SMP force measurements at the snow(soil) surface 
-        and returns the depth value and data array index for use in slicing the raw data array 
-        to avoid spurious SMP force measurements
+        may be useful at some point in the future.
         
-        **surfType**: Either 'snow' or 'soil' for the respective surface of interest
-        
-        **sWindow**: The size of the smoothing window for the noise-reducing moving-average approach *(default: 1000 )*
+        **use_raw**: use the raw SMP data rather than the valid-data subset (default False)
         '''
-        # snow surface
-        if surfType == 'snow':
-            # first, smooth the filtered data to reduce noise
-            smoothedForce = moving_average(self.subset[:,1], sWindow)
-            noiseMed = np.median(smoothedForce[sWindow:sWindow * 2]) # using median for now
-            # identify the pen-force peaks, toggle show to True to display inline plot
-            ind = detect_peaks(smoothedForce, mph=noiseMed * 2, mpd=sWindow, show=False)
-            # return the **first** pen-force peak (i.e. the top of the snowpack)
-            try:
-                surfIdx = ind[0]
-            # if we can't find any peaks, just return None which gets handled in __init__()
-            except IndexError:
-                print("***Error: Cannot locate the snow surface")
-                return None
-            # if all is well, trip the quality flag for determining the snow surface
-            self.qFlags['snowSurfaceFound'] = True
-            snowSurf = self.subset[surfIdx, 0] # yank the depth value using our new index
-            return snowSurf
-        # soil surface
-        elif surfType == 'soil':
-            # adapted from https://sourceforge.net/projects/pyntreader/
-            depth = self.subset[:,0]
-            force = self.subset[:,1]
-            overload = self.header['Overload [N]']
-            surfIdx = -1
-            soilSurf = depth[surfIdx] # by default, have the soil surface be the deepest available value
-            # if the overload value is tripped anywhere in the force data,
-            # the SMP may have hit the ground so we do some checks
-            if force.max() >= overload:
-                surfIdx = np.argmax(force) # index of the maximum force value
-                i_thresh = np.where(depth >= depth[surfIdx] - 20)[0][0]
-                f_mean = force[:i_thresh].mean()
-                f_std = force[:i_thresh].std()
-                thresh = f_mean + 5 * f_std
-                while force[surfIdx] > thresh:
-                    surfIdx -= 10
-                # if the current depth is shallower than the max depth,
-                # we trip the quality flag for identifying the soil surface
-                if depth[surfIdx] < soilSurf:
-                    self.qFlags['soilSurfaceFound'] = True
-                soilSurf = depth[surfIdx]
-            # return depth value only
-            return soilSurf
+        if use_raw:
+            return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
         else:
-            raise ValueError("Invalid surfType argument. Must be one of ['snow', 'soil']")
-    
-    def filter_arr(self, zCor=-1):
-        '''
-        Some of the SMP units are producing negative force values when in air
-        This causes havoc when estimating microstructure params
-        Give the user the option to replace them with 0s or interpolate from the nearest non-zero values
-        Default decision is to not do any filtering (zCor=-1)
-        '''
-        #TODO: Check if it's a very short run / air shot
-        filteredArr = self.data.copy()
+            return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
         
-        # pass 1: short run (less than 100mm?)
-        if filteredArr[-1, 0] < 100:
-            print('***Warning: Short run encountered in dataset: {src}'.format(src=self.header['File Name']))
-            self.qFlags['shortRun'] = True
-            
-        # pass 2: air shot
-        force_variance = filteredArr[:,1].var(dtype=np.float64, ddof=1) # ddof=1 "...provides an unbiased estimator of the variance of a hypothetical infinite population"
-        if force_variance < 0.01:
-            print('***Warning: dataset is likely an air-shot: {src}'.format(src=self.header['File Name']))
-            self.qFlags['airShot'] = True
-                
-        # pass 3: negative values
-        if any(filteredArr[:,1] < 0):
-            try:
-                zCor = int(raw_input("Negative force values detected. Replace with 0s (1), interpolate (2): "))
-            except (SyntaxError, ValueError): # if we can't cast the input string to an int just go with the default
-                print("Invalid entry. Negative forces left uncorrected")
-                return filteredArr
-            if zCor == 1:
-                filteredArr[filteredArr[:,1] < 0,1] = 0
-            elif zCor == 2:
-                #Adapted from https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
-                filteredArr[filteredArr[:,1] < 0,1] = np.nan
-                nans, x = np.isnan(filteredArr[:,1]), lambda z: z.nonzero()[0]
-                filteredArr[nans,1] = np.interp(x(nans), x(~nans), filteredArr[~nans,1])
-            else:
-                print("Negative forces left uncorrected") 
-        return filteredArr
-                
     
     def est_microstructure(self, coef):
         '''
@@ -234,6 +152,240 @@ class SMP(object):
         
         self.shotNoise = np.column_stack((medf_z, delta, lam, f_0, L, z))
         return 0 # success
+    
+    
+    def export_to_csv(self, outCsv):
+        '''
+        using the raw data array, export the depth/force columns to a csv with included 7-line header
+        '''
+        serial = self.header['SMP Serial']
+        sampleTotal = int(self.data.shape[0]) # "Tot Samples" field from header is not the number of measurements!
+        lat = self.header['Latitude']
+        lon = self.header['Longitude']
+        tstamp = datetime.datetime(self.header['Year'], self.header['Month'], self.header['Day'], 
+                                   self.header['Hour'], self.header['Min'], self.header['Sec'])
+        csv_header = " SMP Serial: {}\n {}\n {}\n Lat: {}\n Lon: {}\n Total Samples: {}\n Depth (mm),Force (N)"
+        np.savetxt(outCsv, self.data, delimiter=',', comments='#', fmt='%.6f',
+                   header=csv_header.format(serial, tstamp.strftime("%Y-%m-%d"), tstamp.strftime("%H:%M:%S"), lat, lon, sampleTotal))
+    
+    
+    def extract_data(self, pnt_file, header_info):
+        '''
+        ripped straight from https://sourceforge.net/projects/pyntreader/
+        SMP project site: http://www.slf.ch/ueber/organisation/schnee_permafrost/projekte/SnowMicroPen/index_EN
+        '''
+        # read in the raw binary data from pnt_file
+        with open(pnt_file, 'rb') as in_raw:
+            raw = in_raw.read()
+        try:
+            # the starting binary chunk index for the data samples
+            start = 512
+            # the ending chunk index
+            end = header_info['Force Samples'] * 2 + start
+            # binary storage format for unpacking
+            # big-endian short integers (huh?)
+            frmt = '>' + str(header_info['Force Samples']) + 'h'
+            data = struct.unpack(frmt, raw[start:end])
+        except:
+            print("ERROR: unable to read data points from {}".format(os.path.basename(pnt_file)))
+        else:
+            dx = header_info['Samples Dist [mm]']
+            data_x = np.arange(0, len(data)) * dx
+            data_y = np.asarray(data) * header_info['CNV Force [N/mV]']
+            data = np.column_stack([data_x, data_y])
+            #debug
+            #print "Read {} data points from {}".format(len(data_y), os.path.basename(pnt_file))
+            return data
+    
+    
+    def filter_arr(self, zCor=-1):
+        '''
+        Some of the SMP units are producing negative force values
+        This causes havoc when estimating microstructure params
+        Give the user the option to replace them with 0s or interpolate from the nearest non-zero values
+        Default decision is to not do any filtering (zCor=-1)
+        '''
+        filteredArr = self.data.copy()
+        
+        # pass 1: short run (less than 100mm?)
+        if filteredArr[-1, 0] < 100:
+            print('***Warning: Short run encountered in dataset: {src}'.format(src=self.header['File Name']))
+            self.qFlags['shortRun'] = True
+            
+        # pass 2: air shot
+        force_variance = filteredArr[:,1].var(dtype=np.float64, ddof=1) # ddof=1 "...provides an unbiased estimator of the variance of a hypothetical infinite population"
+        if force_variance < 0.01:
+            print('***Warning: dataset is likely an air-shot: {src}'.format(src=self.header['File Name']))
+            self.qFlags['airShot'] = True
+                
+        # pass 3: negative values
+        if any(filteredArr[:,1] < 0):
+            try:
+                zCor = int(raw_input("Negative force values detected. Replace with 0s (1), interpolate (2): "))
+            except (SyntaxError, ValueError): # if we can't cast the input string to an int just go with the default
+                print("Invalid entry. Negative forces left uncorrected")
+                return filteredArr
+            if zCor == 1:
+                filteredArr[filteredArr[:,1] < 0,1] = 0
+            elif zCor == 2:
+                #Adapted from https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
+                filteredArr[filteredArr[:,1] < 0,1] = np.nan
+                nans, x = np.isnan(filteredArr[:,1]), lambda z: z.nonzero()[0]
+                filteredArr[nans,1] = np.interp(x(nans), x(~nans), filteredArr[~nans,1])
+            else:
+                print("Negative forces left uncorrected") 
+        return filteredArr
+    
+    
+    #TODO: TESTING!; Use full data record or subset? If subset, check for it
+    def outliers(self, windowMM = 5, threshold=1, pad=False):
+        '''
+        Robust Z-Score outliers; can be used to detect ice features and or soil
+        '''
+        sWindow = windowMM / self.header['Samples Dist [mm]']
+        sWindow = (np.ceil(sWindow) // 2 * 2 + 1).astype(int)
+        sBins = rolling_window(self.subset[:,1], sWindow, pad=False)
+        medFilter = rolling_window(self.subset[:,1], sWindow, pad=False, fun=np.median)
+        diff = np.sqrt(np.sum((sBins - medFilter.reshape(medFilter.size,1))**2, axis=-1))
+        mAD = np.nanmedian(diff) #Median absolute dev
+        if pad:
+            padSize = np.absolute(diff.size-p.subset[:,1].size)/2
+            diff = np.lib.pad(diff, (padSize,padSize), 'constant', constant_values=np.nan)
+        rZScore = 0.6745 * diff / mAD #Robust Z-Score
+        #This will throw warnings if the pad is applied, equality does not work for NaN
+        return rZScore > np.nanmedian(rZScore) + (threshold*np.nanstd(rZScore))
+    
+    
+    def pick_surf(self, surfType, sWindow=1000):
+        '''
+        Identifies the beginning(end) of valid SMP force measurements at the snow(soil) surface 
+        and returns the depth value and data array index for use in slicing the raw data array 
+        to avoid spurious SMP force measurements
+        
+        **surfType**: Either 'snow' or 'soil' for the respective surface of interest
+        
+        **sWindow**: The size of the smoothing window for the noise-reducing moving-average approach *(default: 1000 )*
+        '''
+        # snow surface
+        if surfType == 'snow':
+            # first, smooth the filtered data to reduce noise
+            smoothedForce = rolling_window(self.subset[:,1], sWindow, fun=np.mean, pad=True)
+            noiseMed = np.median(smoothedForce[sWindow:sWindow * 2]) # using median for now
+            # identify the pen-force peaks, toggle show to True to display inline plot
+            ind = detect_peaks(smoothedForce, mph=noiseMed * 2, mpd=sWindow, show=False)
+            # return the **first** pen-force peak (i.e. the top of the snowpack)
+            try:
+                surfIdx = ind[0]
+            # if we can't find any peaks, just return None which gets handled in __init__()
+            except IndexError:
+                print("***Error: Cannot locate the snow surface")
+                return None
+            # if all is well, trip the quality flag for determining the snow surface
+            self.qFlags['snowSurfaceFound'] = True
+            snowSurf = self.subset[surfIdx, 0] # yank the depth value using our new index
+            return snowSurf
+        # soil surface
+        elif surfType == 'soil':
+            # adapted from https://sourceforge.net/projects/pyntreader/
+            depth = self.subset[:,0]
+            force = self.subset[:,1]
+            overload = self.header['Overload [N]']
+            surfIdx = -1
+            soilSurf = depth[surfIdx] # by default, have the soil surface be the deepest available value
+            # if the overload value is tripped anywhere in the force data,
+            # the SMP may have hit the ground so we do some checks
+            if force.max() >= overload:
+                surfIdx = np.argmax(force) # index of the maximum force value
+                i_thresh = np.where(depth >= depth[surfIdx] - 20)[0][0]
+                f_mean = force[:i_thresh].mean()
+                f_std = force[:i_thresh].std()
+                thresh = f_mean + 5 * f_std
+                while force[surfIdx] > thresh:
+                    surfIdx -= 10
+                # if the current depth is shallower than the max depth,
+                # we trip the quality flag for identifying the soil surface
+                if depth[surfIdx] < soilSurf:
+                    self.qFlags['soilSurfaceFound'] = True
+                soilSurf = depth[surfIdx]
+            # return depth value only
+            return soilSurf
+        else:
+            raise ValueError("Invalid surfType argument. Must be one of ['snow', 'soil']")   
+            
+            
+    def plot_ms(self):
+        '''
+        debug-usage, plot the microstructure parameters
+        '''
+        fig = plt.figure(figsize=(11,8))
+        fig.suptitle(self.header['File Name'], fontsize=16)
+        ax0 = fig.add_subplot(221, title='Density (kg m$^{-3}$)')
+        ax1 = fig.add_subplot(222, title='Exponential Correlation Length (mm)')
+        ax2 = fig.add_subplot(223, title='Correlation Length (mm)')
+        ax3 = fig.add_subplot(224, title='Specific Surface Area (mm$^{-1}$)')
+        ax0.plot(self.microStructure[:,0])
+        ax1.plot(self.microStructure[:,1])
+        ax2.plot(self.microStructure[:,2])
+        ax3.plot(self.microStructure[:,3])
+        #fig.tight_layout()
+        plt.show()
+    
+    
+    def plot_quicklook(self, outPng):
+        '''
+        Create a quick depth/force profile of the raw SMP data using matplotlib, exporting it to a PNG
+        
+        **outPng**: the absolute or relative path to the output PNG file. Uses the current working directory for relative paths.
+        '''
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(self.data[:,1], self.data[:,0], 'k-', linewidth=0.8)
+        x_lim = int(np.ceil(self.data[:,1].max()))
+        y_lim = int(np.ceil(self.data[:,0].max()))
+        ax.set_ybound(-int(y_lim * .05), y_lim + int(y_lim * .05))
+        if x_lim >= 10:
+            ax.set_xbound(-int(x_lim * .05), x_lim + int(x_lim * .05))
+            ax.set_xticks(range(0, x_lim + 1, 5))
+            ax.set_xticks(range(0, x_lim + 1, 1), minor=True)
+        else:
+            ax.set_xbound(-int(x_lim * .1), x_lim + int(x_lim * .1))
+            ax.set_xticks(range(0, x_lim + 1, 1))
+        ax.set_xlabel('Force (N)')
+        ax.invert_yaxis() # Measures Depth from the top of snowpack, so invert Y axis
+        ax.set_ylabel('Depth (mm)')
+        ax.set_title(os.path.splitext(os.path.basename(outPng))[0])
+        plt.savefig(outPng)
+        plt.close(fig)
+
+        
+    def plot_self(self):
+        '''
+        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling mean function (hamming window) 
+        with vertical dashed lines denoting detected snow/soil surfaces
+        '''
+        dframe = self.as_dataframe(use_raw=True)
+        dframe['sub'] = dframe['Force'].copy()
+        dframe['sub'].loc[dframe['Depth'] < self.snowSurf] = None 
+        dframe['e'] = dframe['sub'].rolling(1200, 100, center=True, win_type='hamming').mean()
+        
+        fig = plt.figure(figsize=(11,8))
+        fig.suptitle(self.header['File Name'], fontsize=16)
+        ax = fig.add_subplot(111)
+        dframe.plot(y='Force', x='Depth', ax=ax, label='Raw Data', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='red')
+        dframe.plot(y='sub', x='Depth', ax=ax, label="Subset of Raw", xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='cyan', linewidth=2.2)
+        dframe.plot(y='e', x='Depth', ax=ax, label='Rolling Mean (~5mm hamming window)', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='darkgreen')
+        
+        ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+        ax.text(self.snowSurf, dframe['Force'].max()/2, '\nSnow Surface', rotation=90., linespacing=0.5)
+        if self.qFlags['soilSurfaceFound']:
+            ax.axvline(self.soilSurf, label='Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+            ax.text(self.soilSurf, dframe['Force'].max()/2, '\nSoil Surface', rotation=90., linespacing=0.5)
+            
+        ax.set_xlabel('Depth (mm)')
+        ax.set_ylabel('Force (N)')
+        ax.legend()
+        plt.show()
+        
     
     def retrieve_header(self, pnt_file):
         '''
@@ -348,145 +500,21 @@ class SMP(object):
         # measurement units per value
         units = dict(zip(names, [row[4] for row in construct]))
         return header, units
-    
-    def extract_data(self, pnt_file, header_info):
-        '''
-        ripped straight from https://sourceforge.net/projects/pyntreader/
-        SMP project site: http://www.slf.ch/ueber/organisation/schnee_permafrost/projekte/SnowMicroPen/index_EN
-        '''
-        # read in the raw binary data from pnt_file
-        with open(pnt_file, 'rb') as in_raw:
-            raw = in_raw.read()
-        try:
-            # the starting binary chunk index for the data samples
-            start = 512
-            # the ending chunk index
-            end = header_info['Force Samples'] * 2 + start
-            # binary storage format for unpacking
-            # big-endian short integers (huh?)
-            frmt = '>' + str(header_info['Force Samples']) + 'h'
-            data = struct.unpack(frmt, raw[start:end])
-        except:
-            print("ERROR: unable to read data points from {}".format(os.path.basename(pnt_file)))
-        else:
-            dx = header_info['Samples Dist [mm]']
-            data_x = np.arange(0, len(data)) * dx
-            data_y = np.asarray(data) * header_info['CNV Force [N/mV]']
-            data = np.column_stack([data_x, data_y])
+   
 
-            #print "Read {} data points from {}".format(len(data_y), os.path.basename(pnt_file))
-            return data
-        
-    def plot_quicklook(self, outPng):
-        '''
-        Create a quick depth/force profile of the raw SMP data using matplotlib, exporting it to a PNG
-        
-        **outPng**: the absolute or relative path to the output PNG file. Uses the current working directory for relative paths.
-        '''
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.plot(self.data[:,1], self.data[:,0], 'k-', linewidth=0.8)
-        x_lim = int(np.ceil(self.data[:,1].max()))
-        y_lim = int(np.ceil(self.data[:,0].max()))
-        ax.set_ybound(-int(y_lim * .05), y_lim + int(y_lim * .05))
-        if x_lim >= 10:
-            ax.set_xbound(-int(x_lim * .05), x_lim + int(x_lim * .05))
-            ax.set_xticks(range(0, x_lim + 1, 5))
-            ax.set_xticks(range(0, x_lim + 1, 1), minor=True)
-        else:
-            ax.set_xbound(-int(x_lim * .1), x_lim + int(x_lim * .1))
-            ax.set_xticks(range(0, x_lim + 1, 1))
-        ax.set_xlabel('Force (N)')
-        ax.invert_yaxis() # Measures Depth from the top of snowpack, so invert Y axis
-        ax.set_ylabel('Depth (mm)')
-        ax.set_title(os.path.splitext(os.path.basename(outPng))[0])
-        plt.savefig(outPng)
-        plt.close(fig)
-    
-    def plot_ms(self):
-        '''
-        debug-usage, plot the microstructure parameters
-        '''
-        fig = plt.figure(figsize=(11,8))
-        fig.suptitle(self.header['File Name'], fontsize=16)
-        ax0 = fig.add_subplot(221, title='Density (kg m$^{-3}$)')
-        ax1 = fig.add_subplot(222, title='Exponential Correlation Length (mm)')
-        ax2 = fig.add_subplot(223, title='Correlation Length (mm)')
-        ax3 = fig.add_subplot(224, title='Specific Surface Area (mm$^{-1}$)')
-        ax0.plot(self.microStructure[:,0])
-        ax1.plot(self.microStructure[:,1])
-        ax2.plot(self.microStructure[:,2])
-        ax3.plot(self.microStructure[:,3])
-        #fig.tight_layout()
-        plt.show()
-        
-    def plot_self(self):
-        '''
-        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling mean function (hamming window) 
-        with vertical dashed lines denoting detected snow/soil surfaces
-        '''
-        dframe = self.as_dataframe(use_raw=True)
-        dframe['sub'] = dframe['Force'].copy()
-        dframe['sub'].loc[dframe['Depth'] < self.snowSurf] = None 
-        dframe['e'] = dframe['sub'].rolling(1200, 100, center=True, win_type='hamming').mean()
-        
-        fig = plt.figure(figsize=(11,8))
-        fig.suptitle(self.header['File Name'], fontsize=16)
-        ax = fig.add_subplot(111)
-        dframe.plot(y='Force', x='Depth', ax=ax, label='Raw Data', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='red')
-        dframe.plot(y='sub', x='Depth', ax=ax, label="Subset of Raw", xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='cyan', linewidth=2.2)
-        dframe.plot(y='e', x='Depth', ax=ax, label='Rolling Mean (~5mm hamming window)', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='darkgreen')
-        
-        ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-        ax.text(self.snowSurf, dframe['Force'].max()/2, '\nSnow Surface', rotation=90., linespacing=0.5)
-        if self.qFlags['soilSurfaceFound']:
-            ax.axvline(self.soilSurf, label='Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-            ax.text(self.soilSurf, dframe['Force'].max()/2, '\nSoil Surface', rotation=90., linespacing=0.5)
-            
-        ax.set_xlabel('Depth (mm)')
-        ax.set_ylabel('Force (N)')
-        ax.legend()
-        plt.show()
-        
-        
-    
-    def as_dataframe(self, use_raw=False):
-        '''
-        may be useful at some point in the future.
-        
-        **use_raw**: use the raw SMP data rather than the valid-data subset (default False)
-        '''
-        if use_raw:
-            return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
-        else:
-            return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
-        
-    
-    def export_to_csv(self, outCsv):
-        '''
-        using the raw data array, export the depth/force columns to a csv with included 7-line header
-        '''
-        serial = self.header['SMP Serial']
-        sampleTotal = int(self.data.shape[0]) # "Tot Samples" field from header is not the number of measurements!
-        lat = self.header['Latitude']
-        lon = self.header['Longitude']
-        tstamp = datetime.datetime(self.header['Year'], self.header['Month'], self.header['Day'], 
-                                   self.header['Hour'], self.header['Min'], self.header['Sec'])
-        csv_header = " SMP Serial: {}\n {}\n {}\n Lat: {}\n Lon: {}\n Total Samples: {}\n Depth (mm),Force (N)"
-        np.savetxt(outCsv, self.data, delimiter=',', comments='#', fmt='%.6f',
-                   header=csv_header.format(serial, tstamp.strftime("%Y-%m-%d"), tstamp.strftime("%H:%M:%S"), lat, lon, sampleTotal))
-    
-def moving_average(arr, n=1000):
-    '''
-    Smooths the input 1D array (for our purposes, the SMP force data) with a running average 
-    with window size of n. Pads the front of the array with nan values to return an array 
-    of the same length as the input array
-    '''
-    ret = np.cumsum(arr, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    ret[n - 1:] = ret[n - 1:] / n
-    ret[:n - 1] = np.nan
-    return ret    
+#Returns moving window bins of size window. Set pad to NaN fill to size of a.
+#Fun accecpts np.median, np.mean, ect...
+#Inspired by http://www.rigtorp.se/2011/01/01/rolling-statistics-numpy.html
+def rolling_window(a, window, fun=None, pad=False):
+    window = (np.ceil(window) // 2 * 2 + 1).astype(int) #round up to next odd number
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    rWindow = np.lib.stride_tricks.as_strided(a, shape=shape, strides=a.strides + (a.strides[-1],))
+    if fun:
+        rWindow = fun(rWindow, -1)
+    if pad: #This will be slow if no function is applied!
+      padSize = np.absolute(rWindow.shape[0]-a.shape[0])/2
+      rWindow = np.lib.pad(rWindow, (padSize,padSize), 'constant', constant_values=np.nan)
+    return rWindow  
 
 def gen_msCoef(dens, ssa):
     '''
@@ -537,5 +565,5 @@ if __name__ == "__main__":
         p.est_microstructure(msCoef)
         # debug/still-alive message
         print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))
-
-        
+    
+    
