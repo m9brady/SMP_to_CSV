@@ -5,7 +5,7 @@ from os import path
 cdir = path.abspath(path.dirname(__file__))
 
 setup(
-	name='SnowMicroToolset',
+	name='snowmicrotoolset',
 	version='0.0.1',
 	description='Python tools for processing SMP observations',
 	long_description='',
@@ -32,7 +32,9 @@ setup(
 		'numpy',
 		'scipy'
 		'pandas',
-		'matplotlib'
+		'matplotlib',
+		'geojson',
+		'folium'
 	],
 	
 	python_requires='~=2.7',
@@ -41,5 +43,5 @@ setup(
 	extras_require={
         'dev': ['check-manifest'],
         'test': ['coverage'],
-    },	
+    }
 )

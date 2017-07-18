@@ -9,10 +9,12 @@ try:
     import datetime
     import numpy as np
     import pandas as pd
-    import matplotlib.pyplot as plt
-    #plt.ioff() # stop auto-displaying quicklook plots by default
-    from tools_ext import detect_peaks # reason for hacky bandaid
+    import matplotlib.pyplot as plt    
     from scipy import signal 
+    # reason for hacky bandaid
+    from utils import detect_peaks, rolling_window
+    #from extra import export_site_map
+    #plt.ioff() # stop auto-displaying quicklook plots by default
 except ImportError as err:
     print(err)
     raise
@@ -34,23 +36,9 @@ class SMP(object):
         self.shotNoise = None # may not always need to estimate shot noise, so we initialize as None to save processing time
         self.microStructure = None # may not always need to estimate microstructure, so we initialize as None to save processing time
         
-        self.subset = self.filter_arr() # Filter for negative values, short runs, airshots
-        self.snowSurf = self.pick_surf('snow') # depth value (mm)
-        self.soilSurf = self.pick_surf('soil') # depth value (mm)
-        
-        #TODO: decide what to do if we can't find the snow surface
-        if not self.qFlags['snowSurfaceFound']:
-            pass # if snowsurf isn't found, don't bother checking for soilsurf, just leave self.subset alone
-        else:
-            snowSurfIdx = np.where(self.subset[:,0] == self.snowSurf)[0][0]
-            if not self.qFlags['soilSurfaceFound']:
-                # the valid data subset (from snow surface to last measured depth)
-                self.subset = self.subset[snowSurfIdx:,:] 
-            else:
-                # need to increment soilSurfIdx by 1 for the slicing to include the last value
-                soilSurfIdx = np.where(self.subset[:,0] == self.soilSurf)[0][0] + 1 
-                # the valid data subset (from snow surface to soil surface)
-                self.subset = self.subset[snowSurfIdx:soilSurfIdx,:] 
+        self.subset = None
+        self.snowSurf = self.data[0, 0] # by default, first depth value
+        self.soilSurf = self.data[-1, 0] # by default, last depth value
     
     
     # override string behaviour                
@@ -63,12 +51,19 @@ class SMP(object):
         '''
         may be useful at some point in the future.
         
-        **use_raw**: use the raw SMP data rather than the valid-data subset (default False)
+        Parameters
+        ----------
+        use_raw : {bool}    (default=False)
+            use the raw SMP data rather than the valid-data subset.
         '''
         if use_raw:
             return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
         else:
-            return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
+            if self.subset is None:
+                print("Subset not calculated, use filter_arr() method")
+                return None
+            else:
+                return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
         
     
     def est_microstructure(self, coef):
@@ -85,7 +80,7 @@ class SMP(object):
         longCorSmpC = np.empty(arrLen)
         ssaSmp = np.empty(arrLen)
         
-        log_medf_z = np.log(self.shotNoise[:,0]) #log of the window median force
+        log_medf_z = np.log(self.shotNoise[:,0]) # log of the window median force
         L = self.shotNoise[:,4]
         densSmp = coef['a1'] + (coef['a2'] * log_medf_z) + (coef['a3'] * log_medf_z * L) + (coef['a4'] * L)
         phiSmp = densSmp / 916.7
@@ -101,7 +96,19 @@ class SMP(object):
         '''
         Estimate the shot noise parameters based on Löwe and van Herwijnen, 2012
         Ported from various sources written by Martin Proksch, J-B Madore, and Josh King
+        
+        Parameters
+        ----------
+        A_cone : {float}    (default=19.6)
+            the projected cone area in square-millimeters.
+        window_size_mm : {float}    (default=2.0)
+            the size of the rolling window in millimeters.
+        overlap : {float}   (default=0.5) 
+            used with ``window_size_mm`` to define the step size. Default is 0.5.
         '''
+        if self.subset is None:
+            print("Subset not calculated, use filter_arr() method")
+            return 1 # nonzero return value implies bad stuff went down
         samplesDist = self.header['Samples Dist [mm]']
         windowSize = int(round(window_size_mm / samplesDist))
         #stepSizeMM = overlap_mm*window_size_mm
@@ -238,16 +245,25 @@ class SMP(object):
     
     
     #TODO: TESTING!; Use full data record or subset? If subset, check for it
-    def outliers(self, windowMM = 5, threshold=1, pad=False):
+    def outliers(self, windowMM=5, threshold=1, pad=False):
         '''
         Robust Z-Score outliers; can be used to detect ice features and or soil
+        
+        Parameters
+        ----------
+        windowMM : {float}    (default=5.0)
+            the window size in millimeters.
+        threshold : {int}    (default=1)
+            for determining whether or not an outlier is present in the dataset.
+        pad : {bool}    (default=False)
+            decides whether or not to NaN-pad the resultant array to match the input array (currently self.subset).
         '''
         sWindow = windowMM / self.header['Samples Dist [mm]']
         sWindow = (np.ceil(sWindow) // 2 * 2 + 1).astype(int)
-        sBins = rolling_window(self.subset[:,1], sWindow, pad=False)
-        medFilter = rolling_window(self.subset[:,1], sWindow, pad=False, fun=np.median)
-        diff = np.sqrt(np.sum((sBins - medFilter.reshape(medFilter.size,1))**2, axis=-1))
-        mAD = np.nanmedian(diff) #Median absolute dev
+        sBins = rolling_window(self.subset[:,1], sWindow, None, pad=False)
+        medFilter = rolling_window(self.subset[:,1], sWindow, fun=np.median, pad=False)
+        diff = np.sqrt(np.sum((sBins - medFilter.reshape(medFilter.size, 1))**2, axis=-1))
+        mAD = np.nanmedian(diff) # Median Absolute Deviation
         if pad:
             padSize = np.absolute(diff.size-p.subset[:,1].size)/2
             diff = np.lib.pad(diff, (padSize,padSize), 'constant', constant_values=np.nan)
@@ -258,13 +274,20 @@ class SMP(object):
     
     def pick_surf(self, surfType, sWindow=1000):
         '''
-        Identifies the beginning(end) of valid SMP force measurements at the snow(soil) surface 
-        and returns the depth value and data array index for use in slicing the raw data array 
-        to avoid spurious SMP force measurements
+        to avoid spurious SMP force measurements, this method identifies the 
+        beginning(end) of valid SMP force measurements at the snow(soil) 
+        surface and returns the depth value
         
-        **surfType**: Either 'snow' or 'soil' for the respective surface of interest
-        
-        **sWindow**: The size of the smoothing window for the noise-reducing moving-average approach *(default: 1000 )*
+        Parameters
+        ----------
+        surfType : {'snow', 'soil'} 
+            Either 'snow' or 'soil' for the respective surface of interest
+        sWindow : {int}     (default=1000)
+            The size of the smoothing window for the noise-reducing moving-average approach in bins
+            
+        Notes
+        -----
+        This method should only ever be called *once* per surface type for a given SMP file, since it queries and then subsequently alters ``self.subset``
         '''
         # snow surface
         if surfType == 'snow':
@@ -276,10 +299,10 @@ class SMP(object):
             # return the **first** pen-force peak (i.e. the top of the snowpack)
             try:
                 surfIdx = ind[0]
-            # if we can't find any peaks, just return None which gets handled in __init__()
+            # if we can't find any peaks, just return None which gets handled later
             except IndexError:
                 print("***Error: Cannot locate the snow surface")
-                return None
+                return self.snowSurf # default value has been setup in __init__ as the first depth reading
             # if all is well, trip the quality flag for determining the snow surface
             self.qFlags['snowSurfaceFound'] = True
             snowSurf = self.subset[surfIdx, 0] # yank the depth value using our new index
@@ -335,7 +358,10 @@ class SMP(object):
         '''
         Create a quick depth/force profile of the raw SMP data using matplotlib, exporting it to a PNG
         
-        **outPng**: the absolute or relative path to the output PNG file. Uses the current working directory for relative paths.
+        Parameters
+        ----------
+        outPng : 
+            the absolute path to the output PNG file. Uses the current working directory if abspath is not passed.
         '''
         fig = plt.figure()
         ax = fig.add_subplot(111)
@@ -360,30 +386,35 @@ class SMP(object):
         
     def plot_self(self):
         '''
-        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling mean function (hamming window) 
+        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling_mean function
         with vertical dashed lines denoting detected snow/soil surfaces
         '''
-        dframe = self.as_dataframe(use_raw=True)
-        dframe['sub'] = dframe['Force'].copy()
-        dframe['sub'].loc[dframe['Depth'] < self.snowSurf] = None 
-        dframe['e'] = dframe['sub'].rolling(1200, 100, center=True, win_type='hamming').mean()
+        if self.subset is None:
+            sub = self.data[:,1].copy()
+        else:
+            sub = self.subset[:,1].copy()
+            sub = np.concatenate([np.empty(self.data.shape[0] - self.subset.shape[0]), sub])
+        sub[np.where(self.data[:,0] < self.snowSurf)[0]] = np.NaN
+        e = rolling_window(sub, 1200, np.mean, pad=True)
         
         fig = plt.figure(figsize=(11,8))
         fig.suptitle(self.header['File Name'], fontsize=16)
         ax = fig.add_subplot(111)
-        dframe.plot(y='Force', x='Depth', ax=ax, label='Raw Data', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='red')
-        dframe.plot(y='sub', x='Depth', ax=ax, label="Subset of Raw", xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='cyan', linewidth=2.2)
-        dframe.plot(y='e', x='Depth', ax=ax, label='Rolling Mean (~5mm hamming window)', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='darkgreen')
-        
+
+        ax.set_xlim(0, self.data[:,0].max())
+        ax.plot(self.data[:,0], self.data[:,1], color='red', label='Raw Data')
+        ax.plot(self.data[:,0], sub, color='cyan', label='Subset of Raw', linewidth=2.2)
+        ax.plot(self.data[:,0], e, color='darkgreen', label='~5mm mean filter')
+
         ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-        ax.text(self.snowSurf, dframe['Force'].max()/2, '\nSnow Surface', rotation=90., linespacing=0.5)
+        ax.text(self.snowSurf, ax.get_ylim()[1]*.8, '\nSnow Surface', rotation=90., linespacing=0.5)
         if self.qFlags['soilSurfaceFound']:
-            ax.axvline(self.soilSurf, label='Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-            ax.text(self.soilSurf, dframe['Force'].max()/2, '\nSoil Surface', rotation=90., linespacing=0.5)
+            ax.axvline(self.soilSurf, label='Estimated Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+            ax.text(self.soilSurf, ax.get_ylim()[1]*.8, '\nSoil Surface', rotation=90., linespacing=0.5)
             
         ax.set_xlabel('Depth (mm)')
         ax.set_ylabel('Force (N)')
-        ax.legend()
+        ax.legend(framealpha=1)
         plt.show()
         
     
@@ -500,31 +531,27 @@ class SMP(object):
         # measurement units per value
         units = dict(zip(names, [row[4] for row in construct]))
         return header, units
-   
 
-#Returns moving window bins of size window. Set pad to NaN fill to size of a.
-#Fun accecpts np.median, np.mean, ect...
-#Inspired by http://www.rigtorp.se/2011/01/01/rolling-statistics-numpy.html
-def rolling_window(a, window, fun=None, pad=False):
-    window = (np.ceil(window) // 2 * 2 + 1).astype(int) #round up to next odd number
-    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
-    rWindow = np.lib.stride_tricks.as_strided(a, shape=shape, strides=a.strides + (a.strides[-1],))
-    if fun:
-        rWindow = fun(rWindow, -1)
-    if pad: #This will be slow if no function is applied!
-      padSize = np.absolute(rWindow.shape[0]-a.shape[0])/2
-      rWindow = np.lib.pad(rWindow, (padSize,padSize), 'constant', constant_values=np.nan)
-    return rWindow  
-
-def gen_msCoef(dens, ssa):
-    '''
-    Use the supplied Density and Specific Surface Area params to
-    produce bias-minimized microstructure coefficients
-    '''
-    pass
 
 if __name__ == "__main__":
-   
+    '''
+    Currently, when the snowmicrotoolset is run by itself, only provide base 
+    functionality of generating a dataset CSV and quicklook PNG for each detected
+    SMP file.
+    '''
+    workdir = os.path.abspath(os.path.dirname(__file__))
+    input_data = os.path.join(workdir, 'indata')
+    output_data = os.path.join(workdir, 'outdata')
+    pnt_list = []
+    # walk through subdirectories of input_data, looking for SMP .pnt files
+    for root, folders, files in os.walk(input_data):
+        for f in files:
+            if f.endswith('.pnt'):
+                pnt_list.append(os.path.join(root, f))
+                
+    if len(pnt_list) == 0:
+        raise Exception("No PNT files found in {}".format(workdir))
+    
     # placeholder microstructure coefficients
     msCoef = {'a1': 420.47, #+-8.31 kg/m-3
               'a2': 102.47, #+-4.24 N-1
@@ -537,18 +564,6 @@ if __name__ == "__main__":
               'c2': 0.155, #+-0.015 mm-1
               'c3': 0.0291} #+-0.0024 N-1
     
-    #TODO: Come up with better way to manage workdir
-    #workdir = os.path.abspath(os.path.dirname(__file__))
-    workdir = os.getcwd()
-    input_data = os.path.join(workdir, 'indata')
-    output_data = os.path.join(workdir, 'outdata')
-    pnt_list = []
-    # walk through subdirectories of input_data, looking for SMP .pnt files
-    for root, folders, files in os.walk(input_data):
-        for f in files:
-            if f.endswith('.pnt'):
-                pnt_list.append(os.path.join(root, f))
-    
     for pnt in pnt_list:
         baseName = os.path.basename(pnt)
         uniqueKey = os.path.splitext(baseName)[0]
@@ -558,12 +573,30 @@ if __name__ == "__main__":
         outCsvAbs = os.path.join(output_data, outCsv)
         outpPng = outCsvAbs.replace(".csv", ".png")
         # dump to CSV/PNG
-        #if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
-        #if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
-        # do a science!
+        if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
+        if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
+        # debug/still-alive message
+        print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))    
+        '''
+        # do some preliminary work on the SMP object
+        p.subset = p.filter_arr() # Filter for negative values, short runs, airshots
+        #TODO: here is where we will check for/mask out ice lenses?
+        p.snowSurf = p.pick_surf('snow') # depth value (mm)
+        p.soilSurf = p.pick_surf('soil') # depth value (mm)
+        #TODO: decide what to do if we can't find the snow surface
+        if not p.qFlags['snowSurfaceFound']:
+            pass # if snowsurf isn't found, don't bother checking for soilsurf, just leave self.subset alone
+        else:
+            snowSurfIdx = np.where(p.subset[:,0] == p.snowSurf)[0][0]
+            if not p.qFlags['soilSurfaceFound']:
+                # the valid data subset (from snow surface to last measured depth)
+                p.subset = p.subset[snowSurfIdx:,:] 
+            else:
+                # need to increment soilSurfIdx by 1 for the slicing to include the last value
+                soilSurfIdx = np.where(p.subset[:,0] == p.soilSurf)[0][0] + 1 
+                # the valid data subset (from snow surface to soil surface)
+                p.subset = p.subset[snowSurfIdx:soilSurfIdx,:]
+        # estimate the shot noise and subsequent microstructure using placeholder msCoef
         p.est_shot_noise(window_size_mm=2.5, overlap=0.5)
         p.est_microstructure(msCoef)
-        # debug/still-alive message
-        print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))
-    
-    
+        '''
