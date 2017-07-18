@@ -423,26 +423,27 @@ class SMP(object):
         
     def plot_self(self):
         '''
-        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling mean function (hamming window) 
+        debug-usage, plot the raw data, overlaid with subset, overlaid with rolling_mean function
         with vertical dashed lines denoting detected snow/soil surfaces
         '''
-        dframe = self.as_dataframe(True)
-        dframe['sub'] = dframe['Force'].copy()
-        dframe['sub'].loc[dframe['Depth'] < self.snowSurf] = None 
-        dframe['e'] = dframe['sub'].rolling(600, 100, center=True, win_type='hamming').mean()
+        sub = self.data[:,1].copy()
+        sub[np.where(self.data[:,0] < self.snowSurf)[0]] = np.NaN
+        e = rolling_window(sub, 1200, np.mean, pad=True)
         
         fig = plt.figure(figsize=(11,8))
         fig.suptitle(self.header['File Name'], fontsize=16)
         ax = fig.add_subplot(111)
-        dframe.plot(y='Force', x='Depth', ax=ax, label='Raw Data', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='red')
-        dframe.plot(y='sub', x='Depth', ax=ax, label="Subset of Raw", xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='cyan', linewidth=2.2)
-        dframe.plot(y='e', x='Depth', ax=ax, label='Rolling Mean (~2.5mm hamming window)', xlim=[0, dframe['Depth'].max()], ylim=[0,dframe['Force'].max()], style='darkgreen')
-        
+
+        ax.set_xlim(0, self.data[:,0].max())
+        ax.plot(self.data[:,0], self.data[:,1], color='red', label='Raw Data')
+        ax.plot(self.data[:,0], sub, color='cyan', label='Subset of Raw', linewidth=2.2)
+        ax.plot(self.data[:,0], e, color='darkgreen', label='~5mm mean filter')
+
         ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-        ax.text(self.snowSurf, dframe['Force'].max()/2, '\nSnow Surface', rotation=90., linespacing=0.5)
+        ax.text(self.snowSurf, ax.get_ylim()[1]*.8, '\nSnow Surface', rotation=90., linespacing=0.5)
         if self.qFlags['soilSurfaceFound']:
             ax.axvline(self.soilSurf, label='Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-            ax.text(self.soilSurf, dframe['Force'].max()/2, '\nSoil Surface', rotation=90., linespacing=0.5)
+            ax.text(self.soilSurf, ax.get_ylim()[1]*.8, '\nSoil Surface', rotation=90., linespacing=0.5)
             
         ax.set_xlabel('Depth (mm)')
         ax.set_ylabel('Force (N)')
@@ -554,4 +555,3 @@ if __name__ == "__main__":
         p.est_microstructure(msCoef)
         # debug/still-alive message
         print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))
-        
