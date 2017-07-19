@@ -14,13 +14,13 @@ def export_site_map(smpList, outHtmlFile, center=(39.038759, -108.015841), mapTy
     Parameters
     ----------
     smpList : 
-        the list of SMP objects to be included in the map.
+        The list of SMP objects to be included in the map.
     outHtmlFile : 
-        the absolute path to the output html file.
+        The absolute path to the output html file.
     center : (float, float)     (default = (39.038759, -108.015841))
-        the map center point in ``(lat, lon)`` format. Default is Grand Mesa, CO, USA.
+        The map center point in ``(lat, lon)`` format. Default is Grand Mesa, CO, USA.
     mapType : {'Cluster' or 'Heat'}
-        can be one of either ``Cluster`` for Leaflet MarkerCluster-styled points, or ``Heat`` to generate a heatmap rather than point features.
+        Can be one of either ``Cluster`` for Leaflet MarkerCluster-styled points, or ``Heat`` to generate a heatmap rather than point features.
     
     '''
     geomList = []

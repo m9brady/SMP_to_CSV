@@ -1,10 +1,10 @@
 # SMP_to_CSV
-Converts SMP measurement files ("*.pnt") into CSV containing all data points (Depth and Penetration Force) plus a multi-line header containing time, latitude, longitude and other site-specific information. A depth/force profile quicklook is also generated as a PNG file.
+Converts SMP measurement files (```*.pnt```) into CSV containing all data points (Depth and Penetration Force) plus a multi-line header containing time, latitude, longitude and other site-specific information. A depth/force profile quicklook is also generated as a PNG file.
 
 ## Disclaimer
-The SMP class methods "retrieve_header" and "extract_data" are from the excellent [SnowMicroPyn](https://sourceforge.net/projects/pyntreader/files/) tool by Sascha Grimm. SnowMicroPyn is licensed under the [GNU General Public License version 3.0 (GPLv3)](https://sourceforge.net/directory/license:gplv3/)
+The SMP class methods ```retrieve_header```,  ```extract_data``` and general function ```xcorr``` are from the excellent [SnowMicroPyn](https://sourceforge.net/projects/pyntreader) tool by Sascha Grimm. SnowMicroPyn is licensed under the [GNU General Public License version 3.0 (GPLv3)](https://sourceforge.net/directory/license:gplv3/).
 
-The "detect_peaks" and associated "_plot" helper functions are from the [Biomechanics and Motor Control](https://github.com/demotu/BMC/blob/master/functions/detect_peaks.py) repo by Marcos Duarte. BMC is licensed under the [MIT Licence](https://github.com/demotu/BMC/blob/master/LICENSE.txt)
+The ```detect_peaks``` and associated ```_plot``` helper functions are from the [Biomechanics and Motor Control](https://github.com/demotu/BMC/blob/master/functions/detect_peaks.py) repo by Marcos Duarte. BMC is licensed under the [MIT Licence](https://github.com/demotu/BMC/blob/master/LICENSE.txt)
 
 ## Requirements and Usage
 *Assumes you have Python 2.7 installed with numpy, scipy, pandas and matplotlib modules*
@@ -13,7 +13,7 @@ The "detect_peaks" and associated "_plot" helper functions are from the [Biomech
 
 1. Create two folders ```indata``` and ```outdata``` in the same directory as snowmicrotoolset.py
 
-2. Put the SMP measurement files ("*.pnt") into the ```indata``` folder 
+2. Put the SMP measurement files (```*.pnt```) into the ```indata``` folder 
 
 3. Run the snowmicrotoolset.py script from the same directory where ```indata``` and ```outdata``` are located. 
 

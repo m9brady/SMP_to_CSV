@@ -13,8 +13,7 @@ try:
     from scipy import signal 
     # reason for hacky bandaid
     from utils import detect_peaks, rolling_window
-    #from extra import export_site_map
-    #plt.ioff() # stop auto-displaying quicklook plots by default
+    #from extra import export_site_map # not important right now
 except ImportError as err:
     print(err)
     raise
@@ -41,10 +40,19 @@ class SMP(object):
         self.soilSurf = self.data[-1, 0] # by default, last depth value
     
     
-    # override string behaviour                
     def __str__(self):
+        '''
+        string representation of SMP object : 
+            site name [time of measurement] (number of raw measurements)
+            
+        Example
+        -------
+        >>> x = SMP('S34M1358.pnt')
+        >>> print(x)
+        >>> 'S34M1358 [2017-02-20T19:30:33] (290400 raw measurements)'
+        '''
         d = datetime.datetime(int(self.header['Year']), int(self.header['Month']), int(self.header['Day']), int(self.header['Hour']), int(self.header['Min']), int(self.header['Sec']))
-        return "{name} [{date}] ({count} raw observations)".format(name=self.header['File Name'], date=d.isoformat(), count=int(self.data.shape[0]))
+        return "{name} [{date}] ({count} raw measurements)".format(name=self.header['File Name'], date=d.isoformat(), count=int(self.data.shape[0]))
 
 
     def as_dataframe(self, use_raw=False):
@@ -60,16 +68,21 @@ class SMP(object):
             return pd.DataFrame(data=self.data, columns=['Depth', 'Force'])
         else:
             if self.subset is None:
-                print("Subset not calculated, use filter_arr() method")
+                print("Data not preprocessed, use filter_raw() method")
                 return None
             else:
                 return pd.DataFrame(data=self.subset, columns=['Depth', 'Force'])
         
     
     def est_microstructure(self, coef):
-        '''
-        Estimate the microstructure properties based on Proksch et al 2015
+        u'''
+        Estimate the microstructure properties based on [1]_.
         Ported from various sources written by Martin Proksch and Josh King
+        
+        References
+        ----------
+        .. [1] Proksch, M., Löwe, H. and Schneebeli, M. (2015), Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry. J. Geophys. Res. Earth Surf., 120: 346–362. doi: 10.1002/2014JF003266.
+            (http://dx.doi.org/10.1002/2014JF003266)
         '''
         if self.shotNoise is None:
             return "Shot noise parameters are required."
@@ -93,21 +106,26 @@ class SMP(object):
     
     
     def est_shot_noise(self, A_cone=19.6, window_size_mm=2.0, overlap=0.5):
-        '''
-        Estimate the shot noise parameters based on Löwe and van Herwijnen, 2012
-        Ported from various sources written by Martin Proksch, J-B Madore, and Josh King
+        u'''
+        Estimate the shot noise parameters based on [1]_.
+        Ported from various sources written by Martin Proksch, J-B Madore, and Josh King.
         
         Parameters
         ----------
         A_cone : {float}    (default=19.6)
-            the projected cone area in square-millimeters.
+            The projected cone area in square-millimeters.
         window_size_mm : {float}    (default=2.0)
-            the size of the rolling window in millimeters.
+            The size of the rolling window in millimeters.
         overlap : {float}   (default=0.5) 
-            used with ``window_size_mm`` to define the step size. Default is 0.5.
+            Used with ``window_size_mm`` to define the step size.
+            
+         References
+        ----------
+        .. [1] H. Löwe, A. van Herwijnen, A Poisson shot noise model for micro-penetration of snow, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X, http://dx.doi.org/10.1016/j.coldregions.2011.09.001.
+            http://dx.doi.org/10.1016/j.coldregions.2011.09.001 
         '''
         if self.subset is None:
-            print("Subset not calculated, use filter_arr() method")
+            print("Data not preprocessed, use filter_raw() method")
             return 1 # nonzero return value implies bad stuff went down
         samplesDist = self.header['Samples Dist [mm]']
         windowSize = int(round(window_size_mm / samplesDist))
@@ -205,7 +223,7 @@ class SMP(object):
             return data
     
     
-    def filter_arr(self, zCor=-1):
+    def filter_raw(self, zCor=-1):
         '''
         Some of the SMP units are producing negative force values
         This causes havoc when estimating microstructure params
@@ -252,11 +270,11 @@ class SMP(object):
         Parameters
         ----------
         windowMM : {float}    (default=5.0)
-            the window size in millimeters.
+            The window size in millimeters.
         threshold : {int}    (default=1)
-            for determining whether or not an outlier is present in the dataset.
+            For determining whether or not an outlier is present in the dataset.
         pad : {bool}    (default=False)
-            decides whether or not to NaN-pad the resultant array to match the input array (currently self.subset).
+            Decides whether or not to NaN-pad the resultant array to match the input array (currently self.subset).
         '''
         sWindow = windowMM / self.header['Samples Dist [mm]']
         sWindow = (np.ceil(sWindow) // 2 * 2 + 1).astype(int)
@@ -274,20 +292,20 @@ class SMP(object):
     
     def pick_surf(self, surfType, sWindow=1000):
         '''
-        to avoid spurious SMP force measurements, this method identifies the 
+        To avoid spurious SMP force measurements, this method identifies the 
         beginning(end) of valid SMP force measurements at the snow(soil) 
-        surface and returns the depth value
+        surface and returns the depth value in millimeters.
         
         Parameters
         ----------
         surfType : {'snow', 'soil'} 
-            Either 'snow' or 'soil' for the respective surface of interest
+            Either 'snow' or 'soil' for the respective surface of interest.
         sWindow : {int}     (default=1000)
-            The size of the smoothing window for the noise-reducing moving-average approach in bins
+            The size of the smoothing window for the noise-reducing moving-average approach in bins.
             
         Notes
         -----
-        This method should only ever be called *once* per surface type for a given SMP file, since it queries and then subsequently alters ``self.subset``
+        This method should only ever be called *once* per surface type for a given SMP file, since it queries and then subsequently is used to alter the ``self.subset`` SMP attribute.
         '''
         # snow surface
         if surfType == 'snow':
@@ -380,10 +398,29 @@ class SMP(object):
         ax.invert_yaxis() # Measures Depth from the top of snowpack, so invert Y axis
         ax.set_ylabel('Depth (mm)')
         ax.set_title(os.path.splitext(os.path.basename(outPng))[0])
+        if not outPng.endswith('.png'): outPng += ".png" # force it!
         plt.savefig(outPng)
         plt.close(fig)
 
-        
+
+    def plot_raw(self):
+        '''
+        debug-usage, plot the raw data, overlaid with rolling_mean function
+        '''
+        sub = self.data[:,1].copy()
+        e = rolling_window(sub, 1200, np.mean, pad=True)
+        fig = plt.figure(figsize=(11,8))
+        fig.suptitle(self.header['File Name'], fontsize=16)
+        ax = fig.add_subplot(111)
+        ax.set_xlim(0, self.data[:,0].max())
+        ax.plot(self.data[:,0], sub, color='cyan', label='Raw Data', linewidth=2.2)
+        ax.plot(self.data[:,0], e, color='darkgreen', label='~5mm mean filter')
+        ax.set_xlabel('Depth (mm)')
+        ax.set_ylabel('Force (N)')
+        ax.legend(framealpha=1)
+        plt.show()
+
+
     def plot_self(self):
         '''
         debug-usage, plot the raw data, overlaid with subset, overlaid with rolling_mean function
@@ -398,16 +435,16 @@ class SMP(object):
         e = rolling_window(sub, 1200, np.mean, pad=True)
         
         fig = plt.figure(figsize=(11,8))
-        fig.suptitle(self.header['File Name'], fontsize=16)
         ax = fig.add_subplot(111)
 
         ax.set_xlim(0, self.data[:,0].max())
         ax.plot(self.data[:,0], self.data[:,1], color='red', label='Raw Data')
         ax.plot(self.data[:,0], sub, color='cyan', label='Subset of Raw', linewidth=2.2)
         ax.plot(self.data[:,0], e, color='darkgreen', label='~5mm mean filter')
-
-        ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-        ax.text(self.snowSurf, ax.get_ylim()[1]*.8, '\nSnow Surface', rotation=90., linespacing=0.5)
+        
+        if self.qFlags['snowSurfaceFound']:
+            ax.axvline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+            ax.text(self.snowSurf, ax.get_ylim()[1]*.8, '\nSnow Surface', rotation=90., linespacing=0.5)
         if self.qFlags['soilSurfaceFound']:
             ax.axvline(self.soilSurf, label='Estimated Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
             ax.text(self.soilSurf, ax.get_ylim()[1]*.8, '\nSoil Surface', rotation=90., linespacing=0.5)
@@ -415,6 +452,8 @@ class SMP(object):
         ax.set_xlabel('Depth (mm)')
         ax.set_ylabel('Force (N)')
         ax.legend(framealpha=1)
+        ax.set_title(self.header['File Name'], fontsize=16)
+        fig.tight_layout()
         plt.show()
         
     
@@ -574,12 +613,13 @@ if __name__ == "__main__":
         outpPng = outCsvAbs.replace(".csv", ".png")
         # dump to CSV/PNG
         if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
+        if plt.isinteractive(): # disable interactive plotting 
+            plt.ioff()
         if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
         # debug/still-alive message
         print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))    
-        '''
         # do some preliminary work on the SMP object
-        p.subset = p.filter_arr() # Filter for negative values, short runs, airshots
+        p.subset = p.filter_raw() # Filter for negative values, short runs, airshots
         #TODO: here is where we will check for/mask out ice lenses?
         p.snowSurf = p.pick_surf('snow') # depth value (mm)
         p.soilSurf = p.pick_surf('soil') # depth value (mm)
@@ -599,4 +639,5 @@ if __name__ == "__main__":
         # estimate the shot noise and subsequent microstructure using placeholder msCoef
         p.est_shot_noise(window_size_mm=2.5, overlap=0.5)
         p.est_microstructure(msCoef)
-        '''
+    if not plt.isinteractive(): # re-enable interactive plotting 
+        plt.ion()

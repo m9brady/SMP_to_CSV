@@ -25,7 +25,7 @@ setup(
 	
 	keywords='snow smp snowmicropentrometer',
 	
-	packages=find_packages(exclude=['contrib','docs','tests']),
+	packages=find_packages(exclude=['contrib','docs','utils','extra']),
 	
 	# run-time dependencies
 	install_requires=[
