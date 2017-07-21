@@ -38,6 +38,7 @@ def rolling_window(a, window, fun=None, pad=False):
         rWindow = np.lib.pad(rWindow, (padSize, padSize), 'constant', constant_values=np.nan)
     return rWindow
 
+
 # ripped straight from https://sourceforge.net/projects/pyntreader/
 # SMP project site: http://www.slf.ch/ueber/organisation/schnee_permafrost/projekte/SnowMicroPen/index_EN
 def xcorr(x, y=None, maxlags=None, norm='biased'):

@@ -2,15 +2,15 @@
 from __future__ import print_function # py2/3 print compatibility, since JK seems to like printing py3 style
 try:
     import os
-    import sys 
+    import sys
     # hacky bandaid
     sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     import struct
     import datetime
     import numpy as np
     import pandas as pd
-    import matplotlib.pyplot as plt    
-    from scipy import signal 
+    import matplotlib.pyplot as plt
+    from scipy import signal
     # reason for hacky bandaid
     from utils import detect_peaks, rolling_window
     #from extra import export_site_map # not important right now
@@ -27,7 +27,7 @@ class SMP(object):
                        'soilSurfaceFound': False, 
                        'shortRun': False, # too-shallow SMP measurement
                        'airShot': False, # air-shot refers to SMP device test without any snow measurements
-                       # SMP signal quality classes as per [Pielmeier & Marshall 2009]
+                       # SMP signal quality classes as per [Pielmeier & Marshall 2009] http://www.sciencedirect.com/science/article/pii/S0165232X0900113X
                        'C1': False, # C1 flag, No detected errors
                        'C2': False, # C2 flag, Trend or offset in absolute SMP force
                        'C3': False, # C3 flag, Dampened or disturbed SMP force micro-variance
@@ -80,9 +80,9 @@ class SMP(object):
         
         References
         ----------
-        .. [1] : `Proksch, M., Löwe, H. and Schneebeli, M. (2015), Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry. J. Geophys. Res. Earth Surf., 120: 346–362. doi: 10.1002/2014JF003266`_.
-            
-        .. _Proksch, M., Löwe, H. and Schneebeli, M. (2015), Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry. J. Geophys. Res. Earth Surf., 120: 346–362. doi: 10.1002/2014JF003266:
+        .. [1] Proksch, M., Löwe, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346–362.
+        
+        .. _Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry:
             http://dx.doi.org/10.1002/2014JF003266
         '''
         if self.shotNoise is None:
@@ -122,10 +122,10 @@ class SMP(object):
             
         References
         ----------
-        .. [1] : `Löwe, H., and van Herwijnen, A. (2012), A Poisson shot noise model for micro-penetration of snow, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X`_.
+        .. [1] Löwe, H., and van Herwijnen, A. (2012), `A Poisson shot noise model for micro-penetration of snow`_, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X. 
         
-        .. _Löwe, H., and van Herwijnen, A. (2012), A Poisson shot noise model for micro-penetration of snow, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X:
-            http://dx.doi.org/10.1016/j.coldregions.2011.09.001 
+        .. _A Poisson shot noise model for micro-penetration of snow:
+            http://www.sciencedirect.com/science/article/pii/S0165232X11001832 
         '''
         if self.subset is None:
             print("Data not preprocessed, use filter_raw() method")
@@ -406,30 +406,14 @@ class SMP(object):
         plt.close(fig)
 
 
-    def plot_raw(self):
-        '''
-        debug-usage, plot the raw data, overlaid with rolling_mean function
-        '''
-        sub = self.data[:,1].copy()
-        e = rolling_window(sub, 1200, np.mean, pad=True)
-        fig = plt.figure(figsize=(8,8))
-        ax = fig.add_subplot(111)
-        ax.set_ylim(0, self.data[:,0].max())
-        ax.plot(sub, self.data[:,0], color='cyan', label='Raw Data', linewidth=2.2)
-        ax.plot(e, self.data[:,0], color='darkgreen', label='~5mm mean filter')
-        ax.set_ylabel('Depth (mm)')
-        ax.set_xlabel('Force (N)')
-        ax.legend(framealpha=1)
-        ax.invert_yaxis()
-        ax.set_title(self.header['File Name'], fontsize=16)
-        fig.tight_layout()
-        plt.show()
-
-
-    def plot_self(self):
+    def plot_self(self, filterSize=5, plotSurfs=True):
         '''
         debug-usage, plot the raw data, overlaid with subset, overlaid with ``rolling_mean`` function
         with vertical dashed lines denoting detected snow/soil surfaces
+        
+        **filterSize**: for controlling the mean filter windowsize (Default: 5mm)
+        
+        **plotSurfs**: decide if detected surfaces should be plotted, if available (Default: True)
         '''
         if self.subset is None:
             sub = self.data[:,1].copy()
@@ -437,22 +421,22 @@ class SMP(object):
             sub = self.subset[:,1].copy()
             sub = np.concatenate([np.empty(self.data.shape[0] - self.subset.shape[0]), sub])
         sub[np.where(self.data[:,0] < self.snowSurf)[0]] = np.NaN
-        e = rolling_window(sub, 1200, np.mean, pad=True)
+        e = rolling_window(sub, int(filterSize/self.header['Samples Dist [mm]']), np.mean, pad=True)
         
         fig = plt.figure(figsize=(8,8))
         ax = fig.add_subplot(111)
 
         ax.set_ylim(0, self.data[:,0].max())
         ax.plot(self.data[:,1], self.data[:,0], color='red', label='Raw Data')
-        ax.plot(sub, self.data[:,0], color='cyan', label='Subset of Raw', linewidth=2.2)
-        ax.plot(e, self.data[:,0], color='darkgreen', label='~5mm mean filter')
-        
-        if self.qFlags['snowSurfaceFound']:
-            ax.axhline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-            ax.text(ax.get_xlim()[1]*.2, self.snowSurf-5, '\nSnow Surface')
-        if self.qFlags['soilSurfaceFound']:
-            ax.axhline(self.soilSurf, label='Estimated Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
-            ax.text(ax.get_xlim()[1]*.2, self.soilSurf-5, '\nSoil Surface')
+        ax.plot(sub, self.data[:,0], color='cyan', label='Filtered Subset of Raw', linewidth=2.2)
+        ax.plot(e, self.data[:,0], color='darkgreen', label='~{}mm window mean'.format(filterSize))
+        if plotSurfs:
+            if self.qFlags['snowSurfaceFound']:
+                ax.axhline(self.snowSurf, label='Snow Surface (~{}mm)'.format(round(self.snowSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+                ax.text(ax.get_xlim()[1]*.2, self.snowSurf-5, '\nSnow Surface')
+            if self.qFlags['soilSurfaceFound']:
+                ax.axhline(self.soilSurf, label='Estimated Soil Surface (~{}mm)'.format(round(self.soilSurf,2)), linestyle='dashed', color='k', linewidth=0.8)
+                ax.text(ax.get_xlim()[1]*.2, self.soilSurf-5, '\nSoil Surface')
             
         ax.set_ylabel('Depth (mm)')
         ax.set_xlabel('Force (N)')

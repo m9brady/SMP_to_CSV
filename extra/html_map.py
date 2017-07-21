@@ -4,7 +4,7 @@ try:
     import geojson, folium
     from folium.plugins import MarkerCluster, HeatMap
 except ImportError:
-    pass
+    print("Unable to import required modules. Did you forget to install folium, geojson?")
 
 
 def export_site_map(smpList, outHtmlFile, center=(39.038759, -108.015841), mapType='Cluster'):

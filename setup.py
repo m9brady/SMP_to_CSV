@@ -1,5 +1,5 @@
+# -*- coding: utf-8 -*-
 from setuptools import setup, find_packages
-from codecs import open
 from os import path
 
 cdir = path.abspath(path.dirname(__file__))
@@ -12,7 +12,7 @@ setup(
 	url='https://github.com/m9brady/SMP_to_CSV',
 	author='Climate Processes Section',
 	author_email='',
-	license='Open Government Licence – Canada',
+	license='Open Government Licence Â– Canada',
 	
 	classifiers=[
 		'Development Status :: 2 - Pre-Alpha',
@@ -25,12 +25,12 @@ setup(
 	
 	keywords='snow smp snowmicropentrometer',
 	
-	packages=find_packages(exclude=['contrib','docs','utils','extra']),
+	packages=find_packages(where=cdir, exclude=['contrib','docs','scratch','.git*','.spyproject']),
 	
 	# run-time dependencies
 	install_requires=[
 		'numpy',
-		'scipy'
+		'scipy',
 		'pandas',
 		'matplotlib',
 		'geojson',
