@@ -1,7 +1,8 @@
 try:
     import os
     import numpy as np
-    import geojson, folium
+    import geojson
+    import folium
     from folium.plugins import MarkerCluster, HeatMap
 except ImportError:
     print("Unable to import required modules. Did you forget to install folium, geojson?")

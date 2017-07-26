@@ -30,7 +30,7 @@ def rolling_window(a, window, fun=None, pad=False):
     rWindow = np.lib.stride_tricks.as_strided(a, shape=shape, strides=a.strides + (a.strides[-1],))
     if fun is not None:
         try:
-            rWindow = fun(rWindow, -1)
+            rWindow = fun(rWindow, axis=-1)
         except:
             raise Exception('Must provide the proper arguments to the supplied window function: {}'.format(fun.__module__ + " " + fun.__name__))
     if pad:  # slow if fun == None

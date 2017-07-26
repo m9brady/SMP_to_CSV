@@ -7,7 +7,7 @@ cdir = path.abspath(path.dirname(__file__))
 setup(
 	name='snowmicrotoolset',
 	version='0.0.1',
-	description='Python tools for processing SMP observations',
+	description=u'Python tools for processing SnowMicroPen\u00AE observations',
 	long_description='',
 	url='https://github.com/m9brady/SMP_to_CSV',
 	author='Climate Processes Section',
@@ -23,7 +23,7 @@ setup(
 		'Programming Language :: Python :: 2.7',
 	],
 	
-	keywords='snow smp snowmicropentrometer',
+	keywords='snow microstructure smp snowmicropen snowmicropentrometer',
 	
 	packages=find_packages(where=cdir, exclude=['contrib','docs','scratch','.git*','.spyproject']),
 	

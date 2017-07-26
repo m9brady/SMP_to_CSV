@@ -20,6 +20,9 @@ except ImportError as err:
     
 
 class SMP(object):
+    '''
+    Placeholder for description of SMP class
+    '''
     def __init__(self, binaryfile):
         self.header, self.units = self.retrieve_header(binaryfile)
         self.data = self.extract_data(binaryfile, self.header)
@@ -89,10 +92,10 @@ class SMP(object):
             return "Shot noise parameters are required."
         arrLen = self.shotNoise.shape[0]
         #TODO: Possible refactor to a single 2D array with columns for each property
-        densSmp = np.empty(arrLen)
-        longCorSmpEx = np.empty(arrLen)
-        longCorSmpC = np.empty(arrLen)
-        ssaSmp = np.empty(arrLen)
+        densSmp = np.empty(arrLen)      # Density (kg/m^3)
+        longCorSmpEx = np.empty(arrLen) # Exponential Correlation Length (mm)
+        longCorSmpC = np.empty(arrLen)  # Correlation Length (mm)
+        ssaSmp = np.empty(arrLen)       # Specific Surface Area (mm^-1)
         
         log_medf_z = np.log(self.shotNoise[:,0]) # log of the window median force
         L = self.shotNoise[:,4]
@@ -120,6 +123,10 @@ class SMP(object):
         overlap : {float}   (default=0.5) 
             Used with ``window_size_mm`` to define the step size.
             
+        Returns
+        -------
+        Nx6 numpy array (dtype = float64) where N is the number of windows based on the number of raw observations and the ``window_size_mm``/``overlap`` args.
+        
         References
         ----------
         .. [1] Löwe, H., and van Herwijnen, A. (2012), `A Poisson shot noise model for micro-penetration of snow`_, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X. 
@@ -135,15 +142,15 @@ class SMP(object):
         #stepSizeMM = overlap_mm*window_size_mm
         stepSize = int(overlap * windowSize)
         #nWindows=int(np.floor(self.subset[:,1].size/windowSize))
-        nSteps = int(np.floor(self.subset[:,1].size / stepSize - 1))
+        nSteps = int(np.floor(self.subset.shape[0] / stepSize - 1))
         
         #TODO: Possible refactor to a single 2D array with columns for each parameter
-        z = np.empty(nSteps)
-        medf_z = np.empty(nSteps)
-        delta = np.empty(nSteps)
-        lam = np.empty(nSteps)
-        f_0 = np.empty(nSteps)
-        L = np.empty(nSteps)
+        z = np.empty(nSteps)        # Depth-vector (?)
+        medf_z = np.empty(nSteps)   # Median Penetration Force
+        delta = np.empty(nSteps)    # Intensity of Poisson process(?)
+        lam = np.empty(nSteps)      # Rupture strength(?)
+        f_0 = np.empty(nSteps)      # Deflection at rupture(?)
+        L = np.empty(nSteps)        # Element size(?)
         #plt.plot(p.data[:,0],p.data[:,1])
 
         for i_step in xrange(nSteps):
@@ -169,10 +176,10 @@ class SMP(object):
             maxlag = N - 1
             lags = np.append(np.linspace(N - maxlag, N - 1, N - 1), N)
             lags = np.append(lags, np.linspace(N - 1, N - maxlag, N - 1))
-            lags *= np.repeat(1, C_f.size) # MB: lags is just being multiplied by 1?
+            lags *= np.repeat(1, C_f.size) # MB: lags is just being multiplied by 1? candidate for removal?
             C_f /= lags # normalize by n-lag
             
-            #Shot noise parameters
+            # Shot noise parameters
             delta[i_step] = -3. / 2 * C_f[N-1] / (C_f[N] - C_f[N-1]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
             lam[i_step] = 4. / 3 * c1 ** 2 / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
             f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
@@ -286,11 +293,11 @@ class SMP(object):
         diff = np.sqrt(np.sum((sBins - medFilter.reshape(medFilter.size, 1))**2, axis=-1))
         mAD = np.nanmedian(diff) # Median Absolute Deviation
         if pad:
-            padSize = np.absolute(diff.size-p.subset[:,1].size)/2
+            padSize = np.absolute(diff.size - self.subset[:,1].size) / 2
             diff = np.lib.pad(diff, (padSize,padSize), 'constant', constant_values=np.nan)
-        rZScore = 0.6745 * diff / mAD #Robust Z-Score
+        rZScore = 0.6745 * diff / mAD # Robust Z-Score
         #This will throw warnings if the pad is applied, equality does not work for NaN
-        return rZScore > np.nanmedian(rZScore) + (threshold*np.nanstd(rZScore))
+        return rZScore > np.nanmedian(rZScore) + (threshold * np.nanstd(rZScore))
     
     
     def pick_surf(self, surfType, sWindow=1000):
@@ -598,16 +605,16 @@ if __name__ == "__main__":
         uniqueKey = os.path.splitext(baseName)[0]
         p = SMP(pnt)
         date = '{Y}{M}{D}'.format(Y=p.header['Year'], M=str(p.header['Month']).zfill(2), D=str(p.header['Day']).zfill(2))
-        outCsv = "SMP_{d}_{k}.csv".format(d=date, k=uniqueKey)
-        outCsvAbs = os.path.join(output_data, outCsv)
-        outpPng = outCsvAbs.replace(".csv", ".png")
+        outCsv = os.path.join(output_data,"SMP_{d}_{k}.csv".format(d=date, k=uniqueKey))
+        outPng = outCsv.replace(".csv", ".png")
         # dump to CSV/PNG
-        if not os.path.isfile(outCsvAbs): p.export_to_csv(outCsvAbs)
+        if not os.path.isfile(outCsv): p.export_to_csv(outCsv)
         if plt.isinteractive(): # disable interactive plotting 
             plt.ioff()
-        if not os.path.isfile(outpPng): p.plot_quicklook(outpPng)
+        if not os.path.isfile(outPng): p.plot_quicklook(outPng)
         # debug/still-alive message
-        print(outCsv, "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))    
+        print(os.path.basename(outCsv), "{}/{}".format(pnt_list.index(pnt)+1, len(pnt_list)))    
+        '''
         # do some preliminary work on the SMP object
         p.subset = p.filter_raw() # Filter for negative values, short runs, airshots
         #TODO: here is where we will check for/mask out ice lenses?
@@ -629,6 +636,7 @@ if __name__ == "__main__":
         # estimate the shot noise and subsequent microstructure using placeholder msCoef
         p.est_shot_noise(window_size_mm=2.5, overlap=0.5)
         p.est_microstructure(msCoef)
+        '''
     if not plt.isinteractive(): # re-enable interactive plotting 
         plt.ion()
 
