@@ -11,6 +11,7 @@ try:
     import pandas as pd
     import matplotlib.pyplot as plt
     from scipy import signal
+    from statsmodels.api import add_constant, OLS
     # reason for hacky bandaid
     from utils import detect_peaks, rolling_window
     #from extra import export_site_map # not important right now
@@ -272,6 +273,16 @@ class SMP(object):
         return filteredArr
     
     
+    def mask_ice_lenses(self):
+        '''
+        Minimize the effect of ice lense presence in the profile. Ice lenses are identified by thin sections with
+        unusually-sharp increases in the required penetration force.
+        
+        Operates upon the filtered subset of the raw SMP data.
+        '''
+        pass
+    
+    
     #TODO: TESTING!; Use full data record or subset? If subset, check for it
     def outliers(self, windowMM=5, threshold=1, pad=False):
         '''
@@ -452,7 +463,44 @@ class SMP(object):
         ax.set_title(self.header['File Name'], fontsize=16)
         fig.tight_layout()
         plt.show()
+    
+
+    #  **WORK IN PROGRESS - PROBABLY WRONG**
+    def quality_pass(self):
+        '''
+        Using the raw SMP data, assign values to self.qFlags signal quality classes as per [1]_.
         
+        References
+        ----------
+        .. [1] Pielmeier, C., and Marshall, H-P. (2009), `Rutschblock-scale snowpack stability derived from multiple quality-controlled SnowMicroPen measurements`_, Cold Regions Science and Technology, Volume 59, Issue 2, 2009, Pages 178-184, ISSN 0165-232X
+        
+        .. _Rutschblock-scale snowpack stability derived from multiple quality-controlled SnowMicroPen measurements:
+            http://www.sciencedirect.com/science/article/pii/S0165232X0900113X
+        
+        '''
+        f = self.data[:,1].copy()
+        d = self.data[:,0].copy()
+        d = add_constant(d)
+        rsq = OLS(f, d).fit().rsquared
+        
+        # first, check for presence of linear trend (indicates a systematic error with the SMP device)
+        if (rsq >= 0.7) or (self.header['Offset [N]'] <> 0):  # also check for offset recorded by SMP device
+            self.qFlags['C2'] = True
+            
+        # second, check for "dampened or disturbed SMP force micro-variance"
+        window = int(np.floor(5 / self.header['Samples Dist [mm]']))
+        maxDeviation = 0.02 # threshold
+        rollingVariance = rolling_window(f, window, np.var, pad=False)
+        if np.any(rollingVariance > maxDeviation):
+            self.qFlags['C3'] = True
+            
+        # C4 flag is triggered if both C2 and C3 are True
+        self.qFlags['C4'] = True if (self.qFlags['C2'] and self.qFlags['C3']) else False
+        
+        # C1 flag is True if the other flags are false
+        self.qFlags['C1'] = True if not(self.qFlags['C2'] or self.qFlags['C3']) else False
+        return 0 # success
+    
     
     def retrieve_header(self, pnt_file):
         '''
