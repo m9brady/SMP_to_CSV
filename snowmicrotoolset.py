@@ -198,11 +198,12 @@ class SMP(object):
         sampleTotal = int(self.data.shape[0]) # "Tot Samples" field from header is not the number of measurements!
         lat = self.header['Latitude']
         lon = self.header['Longitude']
+        time_src = 'GPS' if self.header['GPS State'] == '1' else 'UTC'
         tstamp = datetime.datetime(self.header['Year'], self.header['Month'], self.header['Day'], 
                                    self.header['Hour'], self.header['Min'], self.header['Sec'])
-        csv_header = " SMP Serial: {}\n {}\n {}\n Lat: {}\n Lon: {}\n Total Samples: {}\n Depth (mm),Force (N)"
+        csv_header = " SMP Serial: {}\n Date: {}\n Time ({}): {}\n Lat: {}\n Lon: {}\n Total Samples: {}\n Depth (mm),Force (N)"
         np.savetxt(outCsv, self.data, delimiter=',', comments='#', fmt='%.6f',
-                   header=csv_header.format(serial, tstamp.strftime("%Y-%m-%d"), tstamp.strftime("%H:%M:%S"), lat, lon, sampleTotal))
+                   header=csv_header.format(serial, tstamp.strftime("%Y-%m-%d"), time_src, tstamp.strftime("%H:%M:%S"), lat, lon, sampleTotal))
     
     
     def extract_data(self, pnt_file, header_info):
