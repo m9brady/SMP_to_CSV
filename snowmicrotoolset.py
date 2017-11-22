@@ -240,7 +240,7 @@ class SMP(object):
         Some of the SMP units are producing negative force values
         This causes havoc when estimating microstructure params
         Give the user the option to replace them with 0s or interpolate from the nearest non-zero values
-        Default decision is to not do any filtering (zCor=-1)
+        Default decision is to prompt the user for case-by-case input (zCor=-1)
         '''
         filteredArr = self.data.copy()
         
@@ -257,14 +257,17 @@ class SMP(object):
                 
         # pass 3: negative values
         if any(filteredArr[:,1] < 0):
-            try:
-                zCor = int(raw_input("Negative force values detected. Replace with 0s (1), interpolate (2): "))
-            except (SyntaxError, ValueError): # if we can't cast the input string to an int just go with the default
-                print("Invalid entry. Negative forces left uncorrected")
-                return filteredArr
+            if zCor == -1:
+                try:
+                    zCor = int(raw_input("Negative force values detected. Replace with 0s (1), interpolate (2): "))
+                except (SyntaxError, ValueError): # if we can't cast the input string to an int just go with the default
+                    print("Invalid entry. Negative forces left uncorrected")
+                    return filteredArr
             if zCor == 1:
+                print("Negative forces replaced with zeroes for dataset: {src}".format(src=self.header['File Name']))
                 filteredArr[filteredArr[:,1] < 0,1] = 0
             elif zCor == 2:
+                print("Negative forces being interpolated with valid-data for dataset: {src}".format(src=self.header['File Name']))
                 #Adapted from https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
                 filteredArr[filteredArr[:,1] < 0,1] = np.nan
                 nans, x = np.isnan(filteredArr[:,1]), lambda z: z.nonzero()[0]
