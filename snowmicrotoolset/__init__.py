@@ -1,24 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function # py2/3 print compatibility, since JK seems to like printing py3 style
-try:
-    import os
-    import sys
-    # hacky bandaid
-    sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-    import struct
-    import datetime
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    from scipy import signal
-    from statsmodels.api import add_constant, OLS
-    # reason for hacky bandaid
-    from utils import detect_peaks, rolling_window
-    #from extra import export_site_map # not important right now
-except ImportError as err:
-    print(err)
-    raise
-    
+import os
+import struct
+import datetime
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import signal, stats
+from utils import detect_peaks, rolling_window
 
 class SMP(object):
     '''
@@ -84,11 +73,11 @@ class SMP(object):
         
         References
         ----------
-        .. [1] Proksch, M., Löwe, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346–362.
+        .. [1] Proksch, M., Löwe, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346362.
         
         .. _Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry:
             http://dx.doi.org/10.1002/2014JF003266
-        '''
+		'''
         if self.shotNoise is None:
             return "Shot noise parameters are required."
         arrLen = self.shotNoise.shape[0]
@@ -484,11 +473,10 @@ class SMP(object):
         '''
         f = self.data[:,1].copy()
         d = self.data[:,0].copy()
-        d = add_constant(d)
-        rsq = OLS(f, d).fit().rsquared
+        _,_,r,_,_ = stats.linregress(f,d)
         
         # first, check for presence of linear trend (indicates a systematic error with the SMP device)
-        if (rsq >= 0.7) or (self.header['Offset [N]'] <> 0):  # also check for offset recorded by SMP device
+        if ((r**2) >= 0.7) or (self.header['Offset [N]'] <> 0):  # also check for offset recorded by SMP device
             self.qFlags['C2'] = True
             
         # second, check for "dampened or disturbed SMP force micro-variance"
