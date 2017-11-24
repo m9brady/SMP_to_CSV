@@ -1,24 +1,13 @@
-# -*- coding: utf-8 -*-
 from __future__ import print_function # py2/3 print compatibility, since JK seems to like printing py3 style
-try:
-    import os
-    import sys
-    # hacky bandaid
-    sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-    import struct
-    import datetime
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    from scipy import signal
-    from statsmodels.api import add_constant, OLS
-    # reason for hacky bandaid
-    from utils import detect_peaks, rolling_window
-    #from extra import export_site_map # not important right now
-except ImportError as err:
-    print(err)
-    raise
-    
+import os
+import struct
+import datetime
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import signal
+from statsmodels.api import add_constant, OLS
+from utils import detect_peaks, rolling_window
 
 class SMP(object):
     '''
@@ -84,11 +73,11 @@ class SMP(object):
         
         References
         ----------
-        .. [1] Proksch, M., LÃ¶we, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346â€“362.
+        .. [1] Proksch, M., Löwe, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346–362.
         
         .. _Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry:
             http://dx.doi.org/10.1002/2014JF003266
-        '''
+		'''
         if self.shotNoise is None:
             return "Shot noise parameters are required."
         arrLen = self.shotNoise.shape[0]
@@ -130,7 +119,7 @@ class SMP(object):
         
         References
         ----------
-        .. [1] LÃ¶we, H., and van Herwijnen, A. (2012), `A Poisson shot noise model for micro-penetration of snow`_, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X. 
+        .. [1] Löwe, H., and van Herwijnen, A. (2012), `A Poisson shot noise model for micro-penetration of snow`_, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X. 
         
         .. _A Poisson shot noise model for micro-penetration of snow:
             http://www.sciencedirect.com/science/article/pii/S0165232X11001832 
@@ -181,9 +170,9 @@ class SMP(object):
             C_f /= lags # normalize by n-lag
             
             # Shot noise parameters
-            delta[i_step] = -3. / 2 * C_f[N-1] / (C_f[N] - C_f[N-1]) * samplesDist # eq. 11 in LÃ¶we and van Herwijnen, 2012  
-            lam[i_step] = 4. / 3 * c1 ** 2 / c2 / delta[i_step] # eq. 12 in LÃ¶we and van Herwijnen, 2012
-            f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in LÃ¶we and van Herwijnen, 2012
+            delta[i_step] = -3. / 2 * C_f[N-1] / (C_f[N] - C_f[N-1]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
+            lam[i_step] = 4. / 3 * c1 ** 2 / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
+            f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
             L[i_step] = (A_cone / lam[i_step]) ** (1. / 3) 
         
         self.shotNoise = np.column_stack((medf_z, delta, lam, f_0, L, z))
