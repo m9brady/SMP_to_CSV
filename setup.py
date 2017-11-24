@@ -28,7 +28,6 @@ setup(
               'numpy',
               'scipy',
               'pandas',
-              'statsmodels',
               'matplotlib',
               'geojson',
               'folium'

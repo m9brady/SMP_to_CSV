@@ -5,8 +5,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import signal
-from statsmodels.api import add_constant, OLS
+from scipy import signal, stats
 from utils import detect_peaks, rolling_window
 
 class SMP(object):
@@ -473,11 +472,10 @@ class SMP(object):
         '''
         f = self.data[:,1].copy()
         d = self.data[:,0].copy()
-        d = add_constant(d)
-        rsq = OLS(f, d).fit().rsquared
+		_,_,r,_,_ = stats.linregress(f,d)
         
         # first, check for presence of linear trend (indicates a systematic error with the SMP device)
-        if (rsq >= 0.7) or (self.header['Offset [N]'] <> 0):  # also check for offset recorded by SMP device
+        if ((r**2) >= 0.7) or (self.header['Offset [N]'] <> 0):  # also check for offset recorded by SMP device
             self.qFlags['C2'] = True
             
         # second, check for "dampened or disturbed SMP force micro-variance"
