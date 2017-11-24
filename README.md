@@ -7,11 +7,22 @@ The SMP class methods ```retrieve_header```,  ```extract_data``` and general fun
 The ```detect_peaks``` and associated ```_plot``` helper functions are from the [Biomechanics and Motor Control](https://github.com/demotu/BMC/blob/master/functions/detect_peaks.py) repo by Marcos Duarte. BMC is licensed under the [MIT Licence](https://github.com/demotu/BMC/blob/master/LICENSE.txt)
 
 ## Requirements and Usage
-*Assumes you have Python 2.7 installed with numpy, scipy, pandas and matplotlib modules*
+*Assumes you have Python 2.7 installed with pip, numpy, scipy, pandas and matplotlib modules*
 
-### Option A: Running the tool standalone
+### Option A: Importing the SMP class definition
 
-1. Create two folders ```indata``` and ```outdata``` in the same directory as snowmicrotoolset.py
+Make a local clone of this repo, navigate to where it is located and run the following command to add the module to your current python environment:
+```
+pip install .
+```
+You should now be able to import the SMP class in a python interpreter or script using the following:
+```
+from snowmicrotoolset import SMP
+```
+
+### Option B: Running the tool standalone
+
+1. Create two folders ```indata``` and ```outdata``` in the same directory as ```snowmicrotoolset/__init__.py```
 
 2. Put the SMP measurement files (```*.pnt```) into the ```indata``` folder 
 
@@ -19,18 +30,11 @@ The ```detect_peaks``` and associated ```_plot``` helper functions are from the 
 
 From Windows command line:
 ```
-python snowmicrotoolset.py
+python __init__.py
 ```
 
 4. All output CSV/PNG files will be sent to the ```outdata``` folder
 
-### Option B: Importing the SMP class definition
-
-In your Python interactive session or script tool, first ensure that the path to ```snowmicrotoolset.py``` is properly appended to your system path. To use the SMP class in your work, use the following command:
-
-```
-from snowmicrotoolset import SMP
-```
 
 ## License
 This dataset is licensed under the [Open Government License of Canada](http://open.canada.ca/en/open-government-licence-canada)
