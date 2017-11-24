@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import print_function # py2/3 print compatibility, since JK seems to like printing py3 style
 import os
 import struct
@@ -72,7 +73,7 @@ class SMP(object):
         
         References
         ----------
-        .. [1] Proksch, M., Löwe, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346–362.
+        .. [1] Proksch, M., LÃ¶we, H. and Schneebeli, M. (2015), `Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry`_. J. Geophys. Res. Earth Surf., 120: 346Â–362.
         
         .. _Density, specific surface area, and correlation length of snow measured by high-resolution penetrometry:
             http://dx.doi.org/10.1002/2014JF003266
@@ -118,7 +119,7 @@ class SMP(object):
         
         References
         ----------
-        .. [1] Löwe, H., and van Herwijnen, A. (2012), `A Poisson shot noise model for micro-penetration of snow`_, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X. 
+        .. [1] LÃ¶we, H., and van Herwijnen, A. (2012), `A Poisson shot noise model for micro-penetration of snow`_, Cold Regions Science and Technology, Volume 70, 2012, Pages 62-70, ISSN 0165-232X. 
         
         .. _A Poisson shot noise model for micro-penetration of snow:
             http://www.sciencedirect.com/science/article/pii/S0165232X11001832 
@@ -169,9 +170,9 @@ class SMP(object):
             C_f /= lags # normalize by n-lag
             
             # Shot noise parameters
-            delta[i_step] = -3. / 2 * C_f[N-1] / (C_f[N] - C_f[N-1]) * samplesDist # eq. 11 in Löwe and van Herwijnen, 2012  
-            lam[i_step] = 4. / 3 * c1 ** 2 / c2 / delta[i_step] # eq. 12 in Löwe and van Herwijnen, 2012
-            f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in Löwe and van Herwijnen, 2012
+            delta[i_step] = -3. / 2 * C_f[N-1] / (C_f[N] - C_f[N-1]) * samplesDist # eq. 11 in LÃ¶we and van Herwijnen, 2012  
+            lam[i_step] = 4. / 3 * c1 ** 2 / c2 / delta[i_step] # eq. 12 in LÃ¶we and van Herwijnen, 2012
+            f_0[i_step] = 3. / 2 * c2 / c1  # eq. 12 in LÃ¶we and van Herwijnen, 2012
             L[i_step] = (A_cone / lam[i_step]) ** (1. / 3) 
         
         self.shotNoise = np.column_stack((medf_z, delta, lam, f_0, L, z))
@@ -472,7 +473,7 @@ class SMP(object):
         '''
         f = self.data[:,1].copy()
         d = self.data[:,0].copy()
-		_,_,r,_,_ = stats.linregress(f,d)
+        _,_,r,_,_ = stats.linregress(f,d)
         
         # first, check for presence of linear trend (indicates a systematic error with the SMP device)
         if ((r**2) >= 0.7) or (self.header['Offset [N]'] <> 0):  # also check for offset recorded by SMP device
