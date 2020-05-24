@@ -13,7 +13,7 @@ The ```detect_peaks``` and associated ```_plot``` helper functions are from the 
 ### Option A: Direct from GitHub
 Use the install-from-github functionality from `pip` to install from the `master` branch:
 ```
-pip install git+https://github.com/m9rady/SMP_to_CSV.git
+pip install git+https://github.com/m9brady/SMP_to_CSV.git@master
 ```
 
 ### Option B: Manual Clone
