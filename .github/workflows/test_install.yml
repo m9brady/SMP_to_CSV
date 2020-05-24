@@ -1,0 +1,59 @@
+name: Test Install
+
+on: [push]
+
+jobs:
+  linux:
+    name: 'Linux - Py${{ matrix.python-version }}'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [2.7, 3.6, 3.7, 3.8]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install snowmicrotoolset
+      run: |
+        pip install .
+    - name: Test import
+      run: |
+        python -c "import snowmicrotoolset; print(snowmicrotoolset.version)"
+  windows:
+    name: 'Win - Py${{ matrix.python-version }}'
+    runs-on: 'windows-latest'
+    strategy:
+      matrix:
+        python-version: [2.7, 3.6, 3.7, 3.8]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install snowmicrotoolset
+      run: |
+        pip install .
+    - name: Test import
+      run: |
+        python -c "import snowmicrotoolset; print(snowmicrotoolset.version)"
+  mac:
+    name: 'Mac - Py${{ matrix.python-version }}'
+    runs-on: 'macos-latest'
+    strategy:
+      matrix:
+        python-version: [2.7, 3.6, 3.7, 3.8]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install snowmicrotoolset
+      run: |
+        pip install .
+    - name: Test import
+      run: |
+        python -c "import snowmicrotoolset; print(snowmicrotoolset.version)"

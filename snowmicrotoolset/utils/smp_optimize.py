@@ -1,5 +1,6 @@
 import numpy as np
-from scipy import signal 
+from scipy import signal
+
 
 '''
 Helper functions to work with the SMP data
@@ -44,5 +45,3 @@ def xcorr_microstructure(smp, obs):
     xCorrSSA = np.correlate(smpDetrend, obsDetrend, mode='full')
     xCorrMaxIdx = np.argmax(xCorrSSA)-obsDetrend.size
     return(xCorrMaxIdx*1.25)
-    
-    
