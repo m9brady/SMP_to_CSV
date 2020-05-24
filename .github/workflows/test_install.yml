@@ -4,7 +4,7 @@ on: [push]
 
 jobs:
   build:
-    name: 'Linux - Py${{ matrix.python-version }}'
+    name: '${{ matrix.os }} - Py${{ matrix.python-version }}'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -21,4 +21,4 @@ jobs:
         pip install .
     - name: Test import
       run: |
-        python -c "import snowmicrotoolset; print(snowmicrotoolset.__version__)"
+        python -c "from __future__ import print_function; import snowmicrotoolset; print(snowmicrotoolset.__version__); import sys; print(sys.version_info)"
