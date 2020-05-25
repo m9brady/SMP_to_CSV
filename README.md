@@ -7,17 +7,17 @@ The SMP class methods ```retrieve_header```,  ```extract_data``` and general fun
 The ```detect_peaks``` and associated ```_plot``` helper functions are from the [Biomechanics and Motor Control](https://github.com/demotu/BMC/blob/master/functions/detect_peaks.py) repo by Marcos Duarte. BMC is licensed under the [MIT Licence](https://github.com/demotu/BMC/blob/master/LICENSE.txt)
 
 ## Installation
-*The following assumes you have a working Python 2.7 or 3.6/3.7/3.8 environment which includes `pip`*
+*The following assumes you have a working Python 2.7 or 3.6/3.7/3.8 environment including `pip`*
 
 
 ### Option A: Direct from GitHub
 Use the install-from-github functionality from `pip` to install from the `master` branch:
 ```
-pip install git+https://github.com/m9brady/SMP_to_CSV.git@master
+pip install https://github.com/m9brady/SMP_to_CSV/archive/master.zip
 ```
 
 ### Option B: Manual Clone
-Make a local clone of this repo, navigate to where it is located and run the following command to add the module to your current python environment:
+Make a local clone of this repo, navigate to where it is located and run the following command to install to your currently-active python environment:
 ```
 pip install .
 ```
@@ -48,7 +48,7 @@ Options:
 
 ### Option B: Interactively processing PNT files
 
-You should now be able to import the SMP class in a python interpreter or script using the following:
+After installing `snowmicrotoolset` you should now be able to import the SMP class in a python interpreter or script using the following:
 ```
 >>> from snowmicrotoolset import SMP
 >>> p = SMP('path/to/pnt_file.pnt')
